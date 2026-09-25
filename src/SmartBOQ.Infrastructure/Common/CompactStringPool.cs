@@ -41,16 +41,23 @@ public sealed class CompactStringPool
     }
 
     /// <summary>
-    /// Returns the canonical shared string instance for the character span without allocating if present.
+    /// Returns the canonical shared string instance for the character span without allocating on cache hits.
+    /// Uses .NET 9+ / .NET 10 AlternateLookup to achieve true zero-allocation lookups on ReadOnlySpan.
     /// </summary>
     public string GetOrAdd(ReadOnlySpan<char> span)
     {
         if (span.IsEmpty) return string.Empty;
         if (span.Length > 256) return span.ToString();
 
-        // Check if string already exists in pool without new allocations where possible
-        string candidate = span.ToString();
-        return _pool.GetOrAdd(candidate, candidate);
+        var lookup = _pool.GetAlternateLookup<ReadOnlySpan<char>>();
+        if (lookup.TryGetValue(span, out string? existing))
+        {
+            return existing;
+        }
+
+        string created = span.ToString();
+        lookup.TryAdd(span, created);
+        return created;
     }
 
     public int Count => _pool.Count;

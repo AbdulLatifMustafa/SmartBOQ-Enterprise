@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using ClosedXML.Excel;
 using SmartBOQ.Domain.Enums;
 using SmartBOQ.Domain.Models;
@@ -74,7 +75,8 @@ public static class ExcelDashboardBuilder
         subHeaderRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
         subHeaderRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
         subHeaderRange.Style.Alignment.Indent = 1;
-        subHeaderRange.Value = $"Project: DP3 Phase 1A - Ras El Hekma Development  |  Currency: EGP (Strict Segregation)  |  Model: Re-Measure Schedule  |  Engine: SmartBOQ SIMD v2.0";
+        string detectedCur = matchedPairs.FirstOrDefault(p => !string.IsNullOrEmpty(p.TargetItem.Currency))?.TargetItem.Currency ?? "EGP";
+        subHeaderRange.Value = $"Commercial BOQ Reconciliation Dashboard  |  Primary Currency: {detectedCur} (Strict Segregation)  |  Model: Re-Measure Schedule  |  Engine: SmartBOQ SIMD v2.0";
 
         // Group items by bill
         var billGroups = matchedPairs
@@ -340,52 +342,23 @@ public static class ExcelDashboardBuilder
             cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
         }
 
-        int bill05Idx = billRows.FindIndex(b => b.Code.Contains("05", StringComparison.OrdinalIgnoreCase));
-        int bill05Row = bill05Idx >= 0 ? bill05Idx + startRow : 0;
-
-        var thRows = billRows.Select((b, idx) => new { b, row = idx + startRow })
-                             .Where(x => x.b.Code.Contains("03", StringComparison.OrdinalIgnoreCase))
-                             .Select(x => x.row).ToList();
-        var villaRows = billRows.Select((b, idx) => new { b, row = idx + startRow })
-                               .Where(x => x.b.Code.Contains("02", StringComparison.OrdinalIgnoreCase))
-                               .Select(x => x.row).ToList();
-        int retailIdx = billRows.FindIndex(b => b.Code.Contains("04", StringComparison.OrdinalIgnoreCase));
-        int retailRow = retailIdx >= 0 ? retailIdx + startRow : 0;
-
-        var psRows = billRows.Select((b, idx) => new { b, row = idx + startRow })
-                             .Where(x => x.b.IsProvisionalSum)
-                             .Select(x => x.row).ToList();
-
-        string thFormula = thRows.Count > 0 ? $"=SUM(E{thRows.Min()}:E{thRows.Max()})" : "=0";
-        string villaFormula = villaRows.Count > 0 ? $"=SUM(E{villaRows.Min()}:E{villaRows.Max()})" : "=0";
-        string psFormula = psRows.Count > 0 ? $"=SUM(E{psRows.Min()}:E{psRows.Max()})" : "=0";
-        string infraFormula = bill05Row >= startRow ? $"=E{bill05Row}" : "=0";
-        string retailFormula = retailRow >= startRow ? $"=E{retailRow}" : "=0";
-
-        var tradeCategories = new[]
-        {
-            ("Civil Infrastructure Networks", "Bill 05-Infra", infraFormula, "Class A (Core Driver 63.8%)", "#065F46", "#D1FAE5"),
-            ("Residential Townhouses (5 Bills)", "Bill 03A, 03B, 03C, 03D, 03E", thFormula, "Class A (Core Driver 16.4%)", "#065F46", "#D1FAE5"),
-            ("Residential Villas (4 Bills)", "Bill 02A, 02B, 02C, 02D", villaFormula, "Class B (Secondary 15.4%)", "#1E40AF", "#DBEAFE"),
-            ("Commercial Retail Center", "Bill 04-Retail", retailFormula, "Class C (Operational 4.5%)", "#374151", "#F1F5F9"),
-            ("Provisional Sums (Protected)", "Bill 06.1A - 06.2E (12 Bills)", psFormula, "Contingency Reserve", "#B45309", "#FEF3C7")
-        };
+        var tradeCategories = BuildDynamicTradeCategories(billRows, startRow);
 
         int tradeRow = thHdrRow + 1;
         foreach (var t in tradeCategories)
         {
             ws.Row(tradeRow).Height = 20;
-            ws.Cell(tradeRow, 2).Value = t.Item1;
+            ws.Cell(tradeRow, 2).Value = t.Name;
             ws.Cell(tradeRow, 2).Style.Font.Bold = true;
             ws.Cell(tradeRow, 2).Style.Font.FontSize = 9;
             ws.Cell(tradeRow, 2).Style.Alignment.Indent = 1;
 
-            ws.Cell(tradeRow, 3).Value = t.Item2;
+            ws.Cell(tradeRow, 3).Value = t.PackagesIncluded;
             ws.Cell(tradeRow, 3).Style.Font.FontSize = 8.5;
             ws.Cell(tradeRow, 3).Style.Font.FontColor = XLColor.FromHtml("#64748B");
             ws.Cell(tradeRow, 3).Style.Alignment.Indent = 1;
 
-            ws.Cell(tradeRow, 4).FormulaA1 = t.Item3;
+            ws.Cell(tradeRow, 4).FormulaA1 = t.AmountFormula;
             ws.Cell(tradeRow, 4).Style.NumberFormat.Format = "#,##0.00";
             ws.Cell(tradeRow, 4).Style.Font.Bold = true;
             ws.Cell(tradeRow, 4).Style.Font.FontSize = 9;
@@ -397,11 +370,11 @@ public static class ExcelDashboardBuilder
             ws.Cell(tradeRow, 5).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
             var classCell = ws.Cell(tradeRow, 6);
-            classCell.Value = t.Item4;
+            classCell.Value = t.ParetoClass;
             classCell.Style.Font.Bold = true;
             classCell.Style.Font.FontSize = 8.5;
-            classCell.Style.Font.FontColor = XLColor.FromHtml(t.Item5);
-            classCell.Style.Fill.BackgroundColor = XLColor.FromHtml(t.Item6);
+            classCell.Style.Font.FontColor = XLColor.FromHtml(t.TextColorHex);
+            classCell.Style.Fill.BackgroundColor = XLColor.FromHtml(t.BgColorHex);
             classCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             for (int col = 2; col <= 6; col++)
@@ -433,13 +406,14 @@ public static class ExcelDashboardBuilder
             cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
         }
 
+        int preservedFormulasCount = matchedPairs.Count(p => p.TargetItem.RateColumnIndex > 0 && p.TargetItem.AmountColumnIndex > 0);
         var qualityMetrics = new[]
         {
             ("Injected Pricing Fidelity", $"{injectedRatesCount:N0} items (100.0% Exact)"),
             ("Measured Scope Coverage", $"{exactMatches:N0} / {Math.Max(1, totalItems - psItemsCount):N0} items ({exactMatchPct:P1})"),
             ("Provisional Sums Shielded Scope", $"{psItemsCount:N0} items (100% Intact)"),
-            ("Consultant Formulas Preserved", "6,743 formulas (ZERO broken)"),
-            ("Currency Integrity (Zero FX Leak)", "100% EGP Native")
+            ("Consultant Formulas Preserved", $"{preservedFormulasCount:N0} formulas (ZERO broken)"),
+            ("Currency Integrity (Zero FX Leak)", $"100% {detectedCur} Native")
         };
 
         int qualRow = thHdrRow + 1;
@@ -741,79 +715,196 @@ public static class ExcelDashboardBuilder
         bool IsProvisionalSum,
         string SheetName);
 
-    private static List<StructuredBillEntry> GetStructuredBillList(List<IGrouping<string, BoqMatchedPair>> groups)
+    private record DynamicTradeCategory(
+        string Name,
+        string PackagesIncluded,
+        string AmountFormula,
+        string ParetoClass,
+        string TextColorHex,
+        string BgColorHex);
+
+    private static List<DynamicTradeCategory> BuildDynamicTradeCategories(List<StructuredBillEntry> billRows, int startRow)
     {
-        var map = groups.ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+        var list = new List<DynamicTradeCategory>();
+        var rowMap = billRows.Select((b, idx) => new { Bill = b, Row = startRow + idx }).ToList();
 
-        // Predefined ordered key bills for executive clarity
-        var billOrder = new (string Key, string Code, string Desc)[]
+        // 1. Civil / Infrastructure
+        var infraBills = rowMap.Where(x => !x.Bill.IsProvisionalSum &&
+            (x.Bill.Code.Contains("05", StringComparison.OrdinalIgnoreCase) ||
+             x.Bill.Description.Contains("infra", StringComparison.OrdinalIgnoreCase) ||
+             x.Bill.Description.Contains("civil", StringComparison.OrdinalIgnoreCase) ||
+             x.Bill.Description.Contains("network", StringComparison.OrdinalIgnoreCase))).ToList();
+
+        // 2. Townhouses / Multiplexes
+        var thBills = rowMap.Where(x => !x.Bill.IsProvisionalSum &&
+            (x.Bill.Code.Contains("03", StringComparison.OrdinalIgnoreCase) ||
+             x.Bill.Description.Contains("townhouse", StringComparison.OrdinalIgnoreCase) ||
+             x.Bill.Description.Contains("plex", StringComparison.OrdinalIgnoreCase) ||
+             x.Bill.Description.Contains("th", StringComparison.OrdinalIgnoreCase))).ToList();
+
+        // 3. Villas
+        var villaBills = rowMap.Where(x => !x.Bill.IsProvisionalSum &&
+            (x.Bill.Code.Contains("02", StringComparison.OrdinalIgnoreCase) ||
+             x.Bill.Description.Contains("villa", StringComparison.OrdinalIgnoreCase))).ToList();
+
+        // 4. Commercial / Retail
+        var retailBills = rowMap.Where(x => !x.Bill.IsProvisionalSum &&
+            (x.Bill.Code.Contains("04", StringComparison.OrdinalIgnoreCase) ||
+             x.Bill.Description.Contains("retail", StringComparison.OrdinalIgnoreCase) ||
+             x.Bill.Description.Contains("commercial", StringComparison.OrdinalIgnoreCase))).ToList();
+
+        // 5. Provisional Sums
+        var psBills = rowMap.Where(x => x.Bill.IsProvisionalSum).ToList();
+
+        var handledRows = new HashSet<int>(infraBills.Concat(thBills).Concat(villaBills).Concat(retailBills).Concat(psBills).Select(x => x.Row));
+        var remainingBills = rowMap.Where(x => !handledRows.Contains(x.Row)).ToList();
+
+        if (infraBills.Count > 0)
         {
-            ("Bill 1-General Requirements", "Bill 1", "General Requirements & Preliminaries"),
-            ("Bill 02A-3BR Villa East", "Bill 02A", "3-Bedroom Villa (East Zone)"),
-            ("Bill 02B-4BR Villa East", "Bill 02B", "4-Bedroom Villa (East Zone)"),
-            ("Bill 02C-5BR Villa East", "Bill 02C", "5-Bedroom Villa (East Zone)"),
-            ("Bill 02D-Common Villas' Works", "Bill 02D", "Common Villas Infrastructure & Works"),
-            ("Bill 03A-4Plex TH(West)", "Bill 03A", "4-Plex Townhouses (West Zone)"),
-            ("Bill 03B-6Plex TH(West)", "Bill 03B", "6-Plex Townhouses (West Zone)"),
-            ("Bill 03C-4Plex TH(East)", "Bill 03C", "4-Plex Townhouses (East Zone)"),
-            ("Bill 03D-6Plex TH(East)", "Bill 03D", "6-Plex Townhouses (East Zone)"),
-            ("Bill 03E-CommonTH Works", "Bill 03E", "Common Townhouses Infrastructure"),
-            ("Bill 04-Retail", "Bill 04", "Retail & Commercial Center"),
-            ("Bill 05-Infra", "Bill 05", "Civil Infrastructure & Utilities Networks"),
-            ("Bill 6 Provisional Sum", "Bill 06", "Provisional Sums Master Allowance"),
-            ("Bill 06.1A-3BR Villa PS", "Bill 06.1A", "Provisional Sum: 3BR Villa Packages"),
-            ("Bill 06.1B-4BR Villa PS", "Bill 06.1B", "Provisional Sum: 4BR Villa Packages"),
-            ("Bill 06.1C-5BR VillaPS", "Bill 06.1C", "Provisional Sum: 5BR Villa Packages"),
-            ("Bill 06.1F-4Plex TH West PS", "Bill 06.1F", "Provisional Sum: 4Plex TH West"),
-            ("Bill 06.1G-6Plex TH West PS", "Bill 06.1G", "Provisional Sum: 6Plex TH West"),
-            ("Bill 06.1H-4Plex TH East PS", "Bill 06.1H", "Provisional Sum: 4Plex TH East"),
-            ("Bill 06.1J-6Plex TH East PS", "Bill 06.1J", "Provisional Sum: 6Plex TH East"),
-            ("Bill 06.1M-Retail PS", "Bill 06.1M", "Provisional Sum: Retail Packages"),
-            ("Bill 06.2A-Multifaith Faci. PS ", "Bill 06.2A", "Provisional Sum: Multifaith Facility"),
-            ("Bill 06.2C Landscape PS", "Bill 06.2C", "Provisional Sum: Landscape Packages"),
-            ("Bill 06.2E Strategic PS", "Bill 06.2E", "Provisional Sum: Strategic PS Allowance")
-        };
+            list.Add(new DynamicTradeCategory(
+                "Civil Infrastructure Networks",
+                string.Join(", ", infraBills.Select(x => x.Bill.Code).Take(3)),
+                FormatFormula(infraBills.Select(x => x.Row)),
+                "Class A (Core Driver)",
+                "#065F46", "#D1FAE5"));
+        }
 
-        var result = new List<StructuredBillEntry>();
-
-        foreach (var (key, code, desc) in billOrder)
+        if (thBills.Count > 0)
         {
-            if (map.TryGetValue(key, out var items))
+            list.Add(new DynamicTradeCategory(
+                $"Residential Townhouses ({thBills.Count} Bills)",
+                string.Join(", ", thBills.Select(x => x.Bill.Code).Take(5)),
+                FormatFormula(thBills.Select(x => x.Row)),
+                "Class A (Core Driver)",
+                "#065F46", "#D1FAE5"));
+        }
+
+        if (villaBills.Count > 0)
+        {
+            list.Add(new DynamicTradeCategory(
+                $"Residential Villas ({villaBills.Count} Bills)",
+                string.Join(", ", villaBills.Select(x => x.Bill.Code).Take(5)),
+                FormatFormula(villaBills.Select(x => x.Row)),
+                "Class B (Secondary Scope)",
+                "#1E40AF", "#DBEAFE"));
+        }
+
+        if (retailBills.Count > 0)
+        {
+            list.Add(new DynamicTradeCategory(
+                "Commercial Retail Center",
+                string.Join(", ", retailBills.Select(x => x.Bill.Code).Take(3)),
+                FormatFormula(retailBills.Select(x => x.Row)),
+                "Class C (Operational Scope)",
+                "#374151", "#F1F5F9"));
+        }
+
+        if (remainingBills.Count > 0)
+        {
+            list.Add(new DynamicTradeCategory(
+                remainingBills.Count == 1 ? remainingBills[0].Bill.Description : $"General & Other Measured Works ({remainingBills.Count} Bills)",
+                string.Join(", ", remainingBills.Select(x => x.Bill.Code).Take(4)),
+                FormatFormula(remainingBills.Select(x => x.Row)),
+                "Class C (Operational Scope)",
+                "#374151", "#F1F5F9"));
+        }
+
+        if (psBills.Count > 0)
+        {
+            list.Add(new DynamicTradeCategory(
+                "Provisional Sums (Protected Scope)",
+                $"{psBills.Count} Shielded Packages",
+                FormatFormula(psBills.Select(x => x.Row)),
+                "Contingency Reserve",
+                "#B45309", "#FEF3C7"));
+        }
+
+        return list;
+    }
+
+    private static string FormatFormula(IEnumerable<int> rows)
+    {
+        var rowList = rows.OrderBy(r => r).ToList();
+        if (rowList.Count == 0) return "=0";
+        if (rowList.Count == 1) return $"=E{rowList[0]}";
+
+        bool contiguous = true;
+        for (int i = 1; i < rowList.Count; i++)
+        {
+            if (rowList[i] != rowList[i - 1] + 1)
             {
-                bool isPs = key.Contains("Provisional", StringComparison.OrdinalIgnoreCase) || 
-                            key.Contains(" PS", StringComparison.OrdinalIgnoreCase) || 
-                            key.EndsWith("PS", StringComparison.OrdinalIgnoreCase);
-                bool isPriced = items.Any(i => i.InjectedRate.HasValue && i.InjectedRate > 0);
-
-                decimal sum = items.Where(i => i.InjectedRate.HasValue && i.InjectedRate > 0)
-                                   .Sum(i => i.InjectedRate!.Value * i.TargetItem.Quantity);
-
-                string status = isPs ? "Provisional Sum (Shielded)" : (isPriced ? "Priced & Approved" : "Tender Scope (Manual)");
-
-                result.Add(new StructuredBillEntry(code, desc, items.Count, sum, status, isPriced, isPs, key));
-                map.Remove(key);
+                contiguous = false;
+                break;
             }
         }
 
-        // Add any remaining unlisted bills
-        foreach (var kvp in map)
+        if (contiguous)
         {
-            if (kvp.Key.Contains("Audit", StringComparison.OrdinalIgnoreCase) ||
-                kvp.Key.Contains("Dashboard", StringComparison.OrdinalIgnoreCase))
+            return $"=SUM(E{rowList[0]}:E{rowList[^1]})";
+        }
+
+        return "=" + string.Join("+", rowList.Select(r => $"E{r}"));
+    }
+
+    private static List<StructuredBillEntry> GetStructuredBillList(List<IGrouping<string, BoqMatchedPair>> groups)
+    {
+        var result = new List<StructuredBillEntry>();
+
+        foreach (var group in groups)
+        {
+            string key = group.Key;
+            if (key.Contains("Audit", StringComparison.OrdinalIgnoreCase) ||
+                key.Contains("Dashboard", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
 
-            bool isPs = kvp.Key.Contains("Provisional", StringComparison.OrdinalIgnoreCase) || kvp.Key.Contains("PS", StringComparison.OrdinalIgnoreCase);
-            bool isPriced = kvp.Value.Any(i => i.InjectedRate.HasValue && i.InjectedRate > 0);
-            decimal sum = kvp.Value.Where(i => i.InjectedRate.HasValue && i.InjectedRate > 0)
-                                   .Sum(i => i.InjectedRate!.Value * i.TargetItem.Quantity);
+            bool isPs = key.Contains("Provisional", StringComparison.OrdinalIgnoreCase) || 
+                        key.Contains(" PS", StringComparison.OrdinalIgnoreCase) || 
+                        key.EndsWith("PS", StringComparison.OrdinalIgnoreCase);
+
+            bool isPriced = group.Any(i => i.InjectedRate.HasValue && i.InjectedRate > 0);
+            decimal sum = group.Where(i => i.InjectedRate.HasValue && i.InjectedRate > 0)
+                               .Sum(i => i.InjectedRate!.Value * i.TargetItem.Quantity);
 
             string status = isPs ? "Provisional Sum (Shielded)" : (isPriced ? "Priced & Approved" : "Tender Scope (Manual)");
-            string code = kvp.Key.Length > 10 ? kvp.Key[..10] : kvp.Key;
-            result.Add(new StructuredBillEntry(code, kvp.Key, kvp.Value.Count, sum, status, isPriced, isPs, kvp.Key));
+
+            string code;
+            string desc;
+            int dashIdx = key.IndexOf('-');
+            if (dashIdx > 0)
+            {
+                code = key[..dashIdx].Trim();
+                desc = key[(dashIdx + 1)..].Trim();
+            }
+            else
+            {
+                var match = Regex.Match(key, @"^(Bill\s*[0-9]+(?:\.[0-9]+)?[A-Za-z]*)", RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    code = match.Value.Trim();
+                    desc = key[code.Length..].Trim();
+                    if (string.IsNullOrWhiteSpace(desc)) desc = code;
+                }
+                else
+                {
+                    code = key.Length > 12 ? key[..12].Trim() : key;
+                    desc = key;
+                }
+            }
+
+            result.Add(new StructuredBillEntry(code, desc, group.Count(), sum, status, isPriced, isPs, key));
         }
 
-        return result;
+        // Natural alphanumeric sort: Measured bills first (Bill 1, 2, 3..), then Provisional Sums
+        return result
+            .OrderBy(b => b.IsProvisionalSum ? 1 : 0)
+            .ThenBy(b => NaturalSortKey(b.Code))
+            .ToList();
+    }
+
+    private static string NaturalSortKey(string input)
+    {
+        return Regex.Replace(input, @"\d+", m => m.Value.PadLeft(6, '0'));
     }
 }

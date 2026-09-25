@@ -1,0 +1,99 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "command": "dotnet",
+            "type": "shell",
+            "args": [
+                "build",
+                "src/SmartBOQ.slnx",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-app",
+            "command": "dotnet",
+            "type": "shell",
+            "args": [
+                "build",
+                "src/SmartBOQ.App/SmartBOQ.App.csproj",
+                "-c",
+                "Debug",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-app-release",
+            "command": "dotnet",
+            "type": "shell",
+            "args": [
+                "build",
+                "src/SmartBOQ.App/SmartBOQ.App.csproj",
+                "-c",
+                "Release",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-cli",
+            "command": "dotnet",
+            "type": "shell",
+            "args": [
+                "build",
+                "src/SmartBOQ.CLI/SmartBOQ.CLI.csproj",
+                "-c",
+                "Debug",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "build-cli-release",
+            "command": "dotnet",
+            "type": "shell",
+            "args": [
+                "build",
+                "src/SmartBOQ.CLI/SmartBOQ.CLI.csproj",
+                "-c",
+                "Release",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Run GUI (SmartBOQ Desktop)",
+            "command": "dotnet",
+            "type": "shell",
+            "args": [
+                "run",
+                "--project",
+                "src/SmartBOQ.App"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "Run CLI (Interactive)",
+            "command": "dotnet",
+            "type": "shell",
+            "args": [
+                "run",
+                "--project",
+                "src/SmartBOQ.CLI"
+            ],
+            "problemMatcher": "$msCompile"
+        }
+    ]
+}

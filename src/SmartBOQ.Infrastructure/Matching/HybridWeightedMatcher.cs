@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using Fastenshtein;
 using SmartBOQ.Domain.Enums;
 using SmartBOQ.Domain.Models;
@@ -448,30 +449,39 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
         return false;
     }
 
+    /// <summary>
+    /// Algorithmic, project-agnostic bill signature extractor.
+    /// Extracts canonical alphanumeric package identifiers dynamically using regex tokenization
+    /// without any hardcoded project-specific bill names.
+    /// </summary>
     private static string ExtractBillTag(string key)
     {
-        if (key.Contains("02a")) return "02a";
-        if (key.Contains("02b")) return "02b";
-        if (key.Contains("02c")) return "02c";
-        if (key.Contains("02d")) return "02d";
-        if (key.Contains("03a")) return "03a";
-        if (key.Contains("03b")) return "03b";
-        if (key.Contains("03c")) return "03c";
-        if (key.Contains("03d")) return "03d";
-        if (key.Contains("03e")) return "03e";
-        if (key.Contains("04") || key.Contains("retail")) return "04";
-        if (key.Contains("05") || key.Contains("infra")) return "05";
-        if (key.Contains("061a")) return "061a";
-        if (key.Contains("061b")) return "061b";
-        if (key.Contains("061c")) return "061c";
-        if (key.Contains("061f")) return "061f";
-        if (key.Contains("061g")) return "061g";
-        if (key.Contains("061h")) return "061h";
-        if (key.Contains("061j")) return "061j";
-        if (key.Contains("061m")) return "061m";
-        if (key.Contains("062a")) return "062a";
-        if (key.Contains("062c")) return "062c";
-        if (key.Contains("062e")) return "062e";
+        if (string.IsNullOrWhiteSpace(key)) return string.Empty;
+
+        // Pattern 1: Find "bill" followed by numbers and optional sub-bill letters (e.g. "bill02a", "bill1", "bill061a")
+        var match = Regex.Match(key, @"bill(\d+[a-z]*)", RegexOptions.IgnoreCase);
+        if (match.Success)
+        {
+            return match.Groups[1].Value.TrimStart('0');
+        }
+
+        // Pattern 2: Any leading digits with trailing letter (e.g. "02a", "3b", "05")
+        var match2 = Regex.Match(key, @"(\d+[a-z]*)", RegexOptions.IgnoreCase);
+        if (match2.Success && match2.Value.Length >= 2)
+        {
+            return match2.Value.TrimStart('0');
+        }
+
+        // Pattern 3: Distinct structural scope keyword tokens
+        string[] semanticKeywords = ["infra", "retail", "landscape", "prelim", "common", "mep", "facade", "hvac", "plumb"];
+        foreach (var kw in semanticKeywords)
+        {
+            if (key.Contains(kw, StringComparison.OrdinalIgnoreCase))
+            {
+                return kw;
+            }
+        }
+
         return string.Empty;
     }
 

@@ -1,0 +1,8 @@
+{
+    "dotnet.defaultSolution": "src/SmartBOQ.slnx",
+    "omnisharp.defaultSolution": "src/SmartBOQ.slnx",
+    "csharp.experimental.debug.hotReload": true,
+    "terminal.integrated.env.windows": {
+        "PATH": "${workspaceFolder};${env:PATH}"
+    }
+}

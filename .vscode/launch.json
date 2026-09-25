@@ -1,0 +1,54 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "▶ SmartBOQ Desktop (GUI) - Debug",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-app",
+            "program": "${workspaceFolder}/src/SmartBOQ.App/bin/Debug/net10.0-windows/SmartBOQ.App.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "internalConsole"
+        },
+        {
+            "name": "▶ SmartBOQ Desktop (GUI) - Release",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-app-release",
+            "program": "${workspaceFolder}/src/SmartBOQ.App/bin/Release/net10.0-windows/SmartBOQ.App.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "internalConsole"
+        },
+        {
+            "name": "SmartBOQ CLI - Interactive",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-cli",
+            "program": "${workspaceFolder}/src/SmartBOQ.CLI/bin/Debug/net10.0/SmartBOQ.CLI.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "SmartBOQ CLI - Deep Merge Test",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build-cli-release",
+            "program": "${workspaceFolder}/src/SmartBOQ.CLI/bin/Release/net10.0/SmartBOQ.CLI.exe",
+            "args": [
+                "--test-merge",
+                "DP3 - Hatchway.xlsx",
+                "REH.1.xlsx",
+                "."
+            ],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "console": "integratedTerminal"
+        }
+    ]
+}

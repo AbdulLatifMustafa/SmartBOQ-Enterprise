@@ -76,7 +76,7 @@ public abstract class BaseBoqExporter : IBoqExporter
                 }
             }
 
-            // 2. Remove broken defined names from xl/workbook.xml
+            // 2. Algorithmically sanitize ONLY corrupted / broken defined names from xl/workbook.xml
             var wbEntry = archive.GetEntry("xl/workbook.xml");
             if (wbEntry != null)
             {
@@ -88,10 +88,53 @@ public abstract class BaseBoqExporter : IBoqExporter
 
                 if (doc != null)
                 {
-                    var definedNames = doc.Descendants().Where(e => e.Name.LocalName == "definedNames").ToList();
-                    if (definedNames.Count > 0)
+                    var validSheets = new HashSet<string>(
+                        doc.Descendants().Where(e => e.Name.LocalName == "sheet")
+                           .Select(s => s.Attribute("name")?.Value ?? "")
+                           .Where(s => !string.IsNullOrEmpty(s)),
+                        StringComparer.OrdinalIgnoreCase
+                    );
+
+                    bool modified = false;
+                    var definedNamesElem = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "definedNames");
+                    if (definedNamesElem != null)
                     {
-                        foreach (var dn in definedNames) dn.Remove();
+                        var namesToRemove = new List<XElement>();
+                        foreach (var dn in definedNamesElem.Elements().Where(e => e.Name.LocalName == "definedName"))
+                        {
+                            string val = dn.Value ?? string.Empty;
+                            if (val.Contains("#REF!", StringComparison.OrdinalIgnoreCase) ||
+                                val.Contains("#VALUE!", StringComparison.OrdinalIgnoreCase) ||
+                                val.Contains("#NULL!", StringComparison.OrdinalIgnoreCase))
+                            {
+                                namesToRemove.Add(dn);
+                            }
+                            else if (val.Contains('!'))
+                            {
+                                int exclIdx = val.IndexOf('!');
+                                string sheetRef = val[..exclIdx].Trim('\'', ' ');
+                                if (!string.IsNullOrEmpty(sheetRef) && !validSheets.Contains(sheetRef))
+                                {
+                                    namesToRemove.Add(dn);
+                                }
+                            }
+                        }
+
+                        if (namesToRemove.Count > 0)
+                        {
+                            foreach (var dn in namesToRemove) dn.Remove();
+                            modified = true;
+                        }
+
+                        if (!definedNamesElem.HasElements)
+                        {
+                            definedNamesElem.Remove();
+                            modified = true;
+                        }
+                    }
+
+                    if (modified)
+                    {
                         wbEntry.Delete();
                         var newWb = archive.CreateEntry("xl/workbook.xml", CompressionLevel.Fastest);
                         using var outStream = newWb.Open();
@@ -100,7 +143,7 @@ public abstract class BaseBoqExporter : IBoqExporter
                 }
             }
 
-            // 3. Strip autoFilter rules from sheet XMLs
+            // 3. Algorithmically inspect and clean ONLY corrupted autoFilter rules from sheet XMLs
             var sheetEntries = archive.Entries
                 .Where(e => e.FullName.StartsWith("xl/worksheets/sheet", StringComparison.OrdinalIgnoreCase) &&
                             e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
@@ -115,6 +158,7 @@ public abstract class BaseBoqExporter : IBoqExporter
                 }
                 if (doc == null) continue;
 
+                // ClosedXML cannot serialize existing template autoFilter elements and throws NotSupportedException
                 var autoFilters = doc.Descendants().Where(e => e.Name.LocalName == "autoFilter").ToList();
                 if (autoFilters.Count > 0)
                 {

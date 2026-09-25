@@ -334,10 +334,10 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 string tblStartLetter = XLHelper.GetColumnLetterFromNumber(tblStart);
                 string tblEndLetter = XLHelper.GetColumnLetterFromNumber(tblEnd);
 
-                // Smart Algorithm: Select entire table row record AND focus ActiveCell directly on Net Rate
-                string smartRange = $"{tblStartLetter}{srcRow}:{tblEndLetter}{srcRow},{srcColLetter}{srcRow}";
-                string srcRef = $"{contractorFileName}#{safeSrcSheet}!{smartRange}";
-                srcJumpCell.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"[ {srcColLetter}{srcRow} ] تحديد السعر وبند المقاول\")";
+                // Accurate direct jump to the exact Net Rate cell in the contractor file
+                string cellCoord = $"{srcColLetter}{srcRow}";
+                string srcRef = $"{contractorFileName}#{safeSrcSheet}!{cellCoord}";
+                srcJumpCell.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"[ {srcColLetter}{srcRow} ] عرض سعر المقاول\")";
                 srcJumpCell.Style.Font.Bold = true;
                 srcJumpCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 srcJumpCell.Style.Font.FontColor = XLColor.FromHtml("#16A34A"); // Emerald green

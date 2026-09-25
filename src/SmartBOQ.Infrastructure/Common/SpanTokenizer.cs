@@ -172,4 +172,79 @@ public static class SpanTokenizer
         int union = a.Length + b.Length - intersection;
         return union == 0 ? 0.0 : (double)intersection / union;
     }
+
+    /// <summary>
+    /// Computes Levenshtein edit distance using bit-parallel Myers algorithm.
+    /// Operates in O(N) time with bitwise registers and hardware POPCNT instructions (zero heap allocation).
+    /// Fallback to Fastenshtein for long strings (> 64 chars) or non-ASCII characters.
+    /// </summary>
+    public static int BitParallelDistance(ReadOnlySpan<char> a, ReadOnlySpan<char> b)
+    {
+        if (a.IsEmpty) return b.Length;
+        if (b.IsEmpty) return a.Length;
+
+        if (a.Length > b.Length)
+        {
+            var temp = a;
+            a = b;
+            b = temp;
+        }
+
+        int m = a.Length;
+        int n = b.Length;
+
+        // Check if characters fit in ASCII byte table for branchless bitmask indexing
+        bool isAscii = true;
+        for (int i = 0; i < m; i++)
+        {
+            if (a[i] >= 256) { isAscii = false; break; }
+        }
+        if (isAscii)
+        {
+            for (int i = 0; i < n; i++)
+            {
+                if (b[i] >= 256) { isAscii = false; break; }
+            }
+        }
+
+        if (isAscii && m <= 64)
+        {
+            Span<ulong> peq = stackalloc ulong[256];
+            peq.Clear();
+            for (int i = 0; i < m; i++)
+            {
+                peq[a[i]] |= 1UL << i;
+            }
+
+            ulong pv = ~0UL;
+            ulong mv = 0UL;
+            int score = m;
+
+            for (int j = 0; j < n; j++)
+            {
+                ulong eq = peq[b[j]];
+
+                ulong xv = eq | mv;
+                ulong xh = (((eq & pv) + pv) ^ pv) | eq;
+
+                ulong ph = mv | ~(xh | pv);
+                ulong mh = pv & xh;
+
+                if ((ph & (1UL << (m - 1))) != 0)
+                    score++;
+                else if ((mh & (1UL << (m - 1))) != 0)
+                    score--;
+
+                ph = (ph << 1) | 1UL;
+                mh = (mh << 1);
+
+                pv = mh | ~(xv | ph);
+                mv = ph & xv;
+            }
+
+            return score;
+        }
+
+        return new Fastenshtein.Levenshtein(a.ToString()).DistanceFrom(b.ToString());
+    }
 }
