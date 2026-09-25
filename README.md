@@ -53,6 +53,7 @@ Detailed architectural and algorithmic documentation is available in the [`doc/`
 * **[doc/DATA_MODELS.md](./doc/DATA_MODELS.md)**: Specifications for `BoqItem`, `BoqMatchedPair`, and `CurrencyAmount`.
 * **[doc/MATCHING_ALGORITHM.md](./doc/MATCHING_ALGORITHM.md)**: Tokenization, Levenshtein, Jaccard, and scoring weights.
 * **[doc/EXCEL_PIPELINE.md](./doc/EXCEL_PIPELINE.md)**: OpenXML external linking and compound union hyperlink engine.
+* **[doc/SUPPORTED_FILE_STRUCTURES.md](./doc/SUPPORTED_FILE_STRUCTURES.md)**: Supported file schemas, ingestion standards, and compatibility checklists.
 * **[doc/DEPLOYMENT_GUIDE.md](./doc/DEPLOYMENT_GUIDE.md)**: Build flags, runtime verification gate, and client distribution.
 
 ---

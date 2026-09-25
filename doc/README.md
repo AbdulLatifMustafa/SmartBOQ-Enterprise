@@ -66,6 +66,7 @@ SmartBOQ.slnx
 | **[DATA_MODELS.md](./DATA_MODELS.md)** | Detailed specification of `BoqItem`, `BoqMatchedPair`, `CurrencyAmount`, and status enums. |
 | **[MATCHING_ALGORITHM.md](./MATCHING_ALGORITHM.md)** | Hybrid Weighted Matching algorithm, tokenizers, Levenshtein, Jaccard, and confidence gates. |
 | **[EXCEL_PIPELINE.md](./EXCEL_PIPELINE.md)** | OpenXML injection, relative external linking, ClosedXML formatting, and compound union hyperlinks. |
+| **[SUPPORTED_FILE_STRUCTURES.md](./SUPPORTED_FILE_STRUCTURES.md)** | Supported file structures, ingestion standards, flat schedule vs multi-sheet BOQ, and compatibility checklist. |
 | **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** | Single-file publishing (`publish.ps1`/`publish.cmd`), runtime detection, and packaging. |
 
 ---
