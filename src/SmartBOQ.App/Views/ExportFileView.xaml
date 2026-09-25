@@ -1,0 +1,124 @@
+<UserControl x:Class="SmartBOQ.App.Views.ExportFileView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             mc:Ignorable="d">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24">
+        <StackPanel MaxWidth="1050" HorizontalAlignment="Stretch">
+            <TextBlock Text="تصدير المقايسة المسعرة ولوحة المؤشرات التنفيذية" FontWeight="Bold" FontSize="20" Margin="0,0,0,18" Foreground="{DynamicResource BrushTextPrimary}"/>
+
+            <!-- Configuration & Actions Card -->
+            <Border Style="{StaticResource ModernCard}" Margin="0,0,0,20">
+                <StackPanel>
+                    <!-- Reconciled File Path -->
+                    <TextBlock Text="1. مسار حفظ ملف المقايسة المسعر النهائي (Reconciled BOQ Schedule):" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" Foreground="{DynamicResource BrushTextPrimary}"/>
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding OutputFilePath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" FontSize="13.5"/>
+                        <Button Grid.Column="1" Command="{Binding BrowseOutputCommand}" Style="{StaticResource SecondaryBtn}" Margin="12,0,0,0" Padding="16,8">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="تغيير المسار..." FontSize="13.5" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <!-- Executive Dashboard File Path -->
+                    <TextBlock Text="2. مسار لوحة مؤشرات الإدارة والرسوم البيانية (Executive Commercial Dashboard):" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" Foreground="{DynamicResource BrushTextPrimary}"/>
+                    <TextBox Text="{Binding DashboardFilePath, Mode=OneWay}" IsReadOnly="True" Style="{StaticResource ModernTextBox}" FontSize="13.5" Margin="0,0,0,18" Opacity="0.85"/>
+
+                    <TextBlock Text="أوراق العمل والملفات المضمنة في الدمج والتصدير:" FontWeight="SemiBold" FontSize="14.5" Margin="0,4,0,10" Foreground="{DynamicResource BrushTextPrimary}"/>
+                    <Border Background="{DynamicResource BrushInputBg}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,20">
+                        <StackPanel>
+                            <TextBlock Text="• الحفاظ بنسبة 100% على تنسيق وألوان وقوالب الاستشاري دون أي تغيير (33 ورقة عمل)." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
+                            <TextBlock Text="• حقن الفئات في العمود G مما يفعل معادلات Excel الأصلية في العمود H تلقائياً." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
+                            <TextBlock Text="• إنشاء ورقة (Audit_Report): توثق كافة البنود المحقونة ونسب التطابق مع معادلات الربط الحي بالخلايا." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
+                            <TextBlock Text="• إنشاء ورقة (Pricing_Linkage_Map): خريطة ربط الأسعار التفاعلية بالربط الديناميكي النسبي بملف المقاول." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
+                            <TextBlock Text="• إنشاء ملف مستقل (DP3_Executive_Dashboard.xlsx): لوحة مؤشرات الإدارة والرسوم البيانية وفروق الأسعار." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
+                            <TextBlock Text="• حفظ وأرشفة لقطة تاريخية للمشروع في قاعدة البيانات المحلية SQLite." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Button Command="{Binding ExportCommand}" Style="{StaticResource ModernBtn}" Padding="26,13" HorizontalAlignment="Right">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconLucide Kind="Download" Width="18" Height="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="تصدير ملف المقايسة والداش بورد وسجلات الربط" FontSize="15" FontWeight="Bold"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+
+            <!-- Export Success Panel (Visible after export) -->
+            <Border Margin="0,0,0,24">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource ModernCard}">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsExported}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                        <Border Background="{DynamicResource BrushSuccess}" CornerRadius="16" Width="32" Height="32" Margin="0,0,10,0">
+                            <iconPacks:PackIconLucide Kind="Check" Width="18" Height="18" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="تم تصدير ودمج الملفات بنجاح!" FontWeight="Bold" FontSize="17" Foreground="{DynamicResource BrushSuccess}" VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <TextBlock Text="يمكنك الآن فتح الملفات الناتجة مباشرة في Excel أو فتح مجلد الحفظ:" FontSize="13.5" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,14"/>
+
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="ملف المقايسة المسعر النهائي (مع شيتات التدقيق والربط):" FontSize="12.5" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding LastExportedSchedulePath}" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Command="{Binding OpenReconciledFileCommand}" Style="{StaticResource ModernBtn}" Padding="16,8" Margin="12,0,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="FileSpreadsheet" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="فتح في Excel" FontWeight="Bold" FontSize="13"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <Separator Background="{DynamicResource BrushBorder}" Margin="0,8"/>
+
+                    <Grid Margin="0,0,0,16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="لوحة مؤشرات الإدارة المستقلة (Dashboard):" FontSize="12.5" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding LastExportedDashboardPath}" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Command="{Binding OpenDashboardCommand}" Style="{StaticResource ModernBtn}" Padding="16,8" Margin="12,0,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="LayoutDashboard" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="فتح الداش بورد" FontWeight="Bold" FontSize="13"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <Button Command="{Binding OpenOutputFolderCommand}" Style="{StaticResource SecondaryBtn}" Padding="18,10" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconLucide Kind="Folder" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="فتح مجلد الحفظ في مستعرض الملفات" FontWeight="SemiBold" FontSize="13.5"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

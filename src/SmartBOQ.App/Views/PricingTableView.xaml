@@ -1,0 +1,354 @@
+<UserControl x:Class="SmartBOQ.App.Views.PricingTableView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             mc:Ignorable="d">
+    <Grid Margin="24,16,24,20">
+        <Grid.RowDefinitions>
+            <!-- Filter & Search Toolbar -->
+            <RowDefinition Height="Auto"/>
+            <!-- Responsive High-Contrast Virtualized DataGrid -->
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Filter Toolbar -->
+        <Grid Grid.Row="0" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Filter Chips (Unified Professional Toolbar) -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Button Content="الكل" Command="{Binding SetFilterCommand}" CommandParameter="All" Style="{StaticResource SecondaryBtn}" Padding="14,8" Margin="0,0,8,0" FontSize="13.5"/>
+                <Button Content="البنود المسعرة" Command="{Binding SetFilterCommand}" CommandParameter="Priced" Style="{StaticResource SecondaryBtn}" Padding="14,8" Margin="0,0,8,0" FontWeight="Bold" FontSize="13.5"/>
+                <Button Content="بنود مستحدثة (VO)" Command="{Binding SetFilterCommand}" CommandParameter="VO" Style="{StaticResource SecondaryBtn}" Padding="14,8" Margin="0,0,8,0" FontWeight="SemiBold" FontSize="13.5"/>
+                <Button Content="مبالغ احتياطية (PS)" Command="{Binding SetFilterCommand}" CommandParameter="PS" Style="{StaticResource SecondaryBtn}" Padding="14,8" Margin="0,0,8,0" FontWeight="SemiBold" FontSize="13.5"/>
+                <Button Content="تحتاج مراجعة" Command="{Binding SetFilterCommand}" CommandParameter="Review" Style="{StaticResource SecondaryBtn}" Padding="14,8" Margin="0,0,8,0" FontWeight="SemiBold" FontSize="13.5"/>
+                <Button Content="المعتمدة" Command="{Binding SetFilterCommand}" CommandParameter="Approved" Style="{StaticResource SecondaryBtn}" Padding="14,8" FontWeight="SemiBold" FontSize="13.5"/>
+            </StackPanel>
+
+            <!-- Search Box -->
+            <Border Grid.Column="1" HorizontalAlignment="Right" Width="300" Margin="0,0,14,0">
+                <Grid>
+                    <TextBox Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" Padding="36,8,12,8" FontSize="13.5"/>
+                    <iconPacks:PackIconLucide Kind="Search" Width="16" Height="16" Foreground="{DynamicResource BrushTextSecondary}" HorizontalAlignment="Left" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <!-- Actions (Approve All & Export Now) -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button Command="{Binding ApproveAllCommand}" Style="{StaticResource SecondaryBtn}" Padding="16,8" Margin="0,0,8,0" FontSize="13.5">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="CheckCheck" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="اعتماد الكل" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+
+                <Button Command="{Binding ExportCommand}" Style="{StaticResource ModernBtn}" Padding="18,8" FontSize="13.5">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="Download" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="تصدير ودمج الآن" FontWeight="Bold"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Responsive High-Contrast Virtualized DataGrid (Precision Column-to-Cell Alignment) -->
+        <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredItems}" 
+                  AutoGenerateColumns="False" CanUserAddRows="False"
+                  CanUserSortColumns="False"
+                  IsReadOnly="False"
+                  HeadersVisibility="Column"
+                  RowHeaderWidth="0"
+                  FontSize="13.5"
+                  RowHeight="38"
+                  Background="{DynamicResource BrushBgCard}" 
+                  RowBackground="{DynamicResource BrushRowBg}" 
+                  AlternatingRowBackground="{DynamicResource BrushRowAltBg}"
+                  BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1"
+                  GridLinesVisibility="All" 
+                  HorizontalGridLinesBrush="{DynamicResource BrushBorder}"
+                  VerticalGridLinesBrush="{DynamicResource BrushBorder}"
+                  EnableRowVirtualization="True" 
+                  EnableColumnVirtualization="False"
+                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                  ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollBarVisibility="Auto">
+
+            <DataGrid.Resources>
+                <!-- Base Column Header Style (Dark/Light Adaptive, Centered) -->
+                <Style x:Key="BaseGridColumnHeader" TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="{DynamicResource BrushHeaderBg}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                    <Setter Property="FontWeight" Value="Bold"/>
+                    <Setter Property="FontSize" Value="13.5"/>
+                    <Setter Property="Padding" Value="8,10"/>
+                    <Setter Property="BorderThickness" Value="0,0,1,1"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}"/>
+                    <Setter Property="Cursor" Value="Arrow"/>
+                    <Setter Property="Focusable" Value="False"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="DataGridColumnHeader">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                      SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource BrushBgCardHover}"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+
+                <!-- Description Column Header Style (Inherits Dark/Light Theme, Right-Aligned) -->
+                <Style x:Key="RightAlignedGridColumnHeader" TargetType="DataGridColumnHeader" BasedOn="{StaticResource BaseGridColumnHeader}">
+                    <Setter Property="HorizontalContentAlignment" Value="Right"/>
+                    <Setter Property="Padding" Value="14,10"/>
+                </Style>
+            </DataGrid.Resources>
+
+            <!-- DataGrid Column Header Style -->
+            <DataGrid.ColumnHeaderStyle>
+                <StaticResource ResourceKey="BaseGridColumnHeader"/>
+            </DataGrid.ColumnHeaderStyle>
+
+            <!-- DataGrid Row Style with Frosted Glass Neutral Selection (Zero Blue) -->
+            <DataGrid.RowStyle>
+                <Style TargetType="DataGridRow">
+                    <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource BrushSelectedRow}"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource BrushRowHover}"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsSelected" Value="True"/>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Background" Value="{DynamicResource BrushSelectedRow}"/>
+                        </MultiTrigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.RowStyle>
+
+            <!-- DataGrid Cell Style with Transparent Background & Clean Alignment (Zero Blue Override) -->
+            <DataGrid.CellStyle>
+                <Style TargetType="DataGridCell">
+                    <Setter Property="Padding" Value="6,4"/>
+                    <Setter Property="BorderThickness" Value="0,0,1,0"/>
+                    <Setter Property="BorderBrush" Value="{DynamicResource BrushBorder}"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="DataGridCell">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        Padding="{TemplateBinding Padding}"
+                                        SnapsToDevicePixels="True">
+                                    <ContentPresenter VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                      HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                      SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="Transparent"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </DataGrid.CellStyle>
+
+            <DataGrid.Columns>
+                <!-- Approved Checkbox -->
+                <DataGridCheckBoxColumn Header="اعتماد" Binding="{Binding IsApproved, UpdateSourceTrigger=PropertyChanged}" Width="65">
+                    <DataGridCheckBoxColumn.ElementStyle>
+                        <Style TargetType="CheckBox">
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridCheckBoxColumn.ElementStyle>
+                </DataGridCheckBoxColumn>
+
+                <!-- Bill Name -->
+                <DataGridTextColumn Header="الشيت / الباب" Binding="{Binding TargetItem.BillNumber}" Width="160" IsReadOnly="True">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <!-- Anchor Row Index -->
+                <DataGridTextColumn Header="السطر" Binding="{Binding TargetItem.AnchorRowIndex}" Width="65" IsReadOnly="True">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <!-- Item Code -->
+                <DataGridTextColumn Header="البند" Binding="{Binding TargetItem.ItemCode}" Width="75" IsReadOnly="True">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <!-- Description (Dynamic Star Sizing, Strictly Right-Aligned with Header) -->
+                <DataGridTextColumn Header="وصف البند" Binding="{Binding TargetItem.Description}" Width="*" IsReadOnly="True"
+                                    HeaderStyle="{StaticResource RightAlignedGridColumnHeader}">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                            <Setter Property="ToolTip" Value="{Binding TargetItem.Description}"/>
+                            <Setter Property="ToolTipService.InitialShowDelay" Value="300"/>
+                            <Setter Property="ToolTipService.ShowDuration" Value="30000"/>
+                            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                            <Setter Property="TextAlignment" Value="Right"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="Padding" Value="14,0"/>
+                            <Setter Property="FontSize" Value="13.5"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <!-- Unit -->
+                <DataGridTextColumn Header="الوحدة" Binding="{Binding TargetItem.Unit}" Width="75" IsReadOnly="True">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <!-- Quantity -->
+                <DataGridTextColumn Header="الكمية" Binding="{Binding TargetItem.Quantity, StringFormat={}{0:N2}}" Width="110" IsReadOnly="True">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="TextAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <!-- Currency -->
+                <DataGridTextColumn Header="العملة" Binding="{Binding TargetItem.Currency}" Width="75" IsReadOnly="True">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <!-- Injected Rate - Price Column -->
+                <DataGridTemplateColumn Header="السعر" Width="135">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding DisplayRateText}" 
+                                       FontWeight="Bold" FontSize="13.5"
+                                       HorizontalAlignment="Center" TextAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsProvisionalSum}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                                                <Setter Property="FontWeight" Value="Normal"/>
+                                                <Setter Property="FontSize" Value="12"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsVariationOrder}" Value="True">
+                                                <Setter Property="Foreground" Value="{DynamicResource BrushWarning}"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                                <Setter Property="FontSize" Value="12"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                    <DataGridTemplateColumn.CellEditingTemplate>
+                        <DataTemplate>
+                            <TextBox Text="{Binding InjectedRate, UpdateSourceTrigger=LostFocus, StringFormat={}{0:N2}}"
+                                     Style="{StaticResource ModernTextBox}" Padding="4,2" HorizontalContentAlignment="Center"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellEditingTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- Match Score -->
+                <DataGridTextColumn Header="دقة التطابق" Binding="{Binding SimilarityScore, StringFormat={}{0:P1}}" Width="100" IsReadOnly="True">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+
+                <!-- Confidence Status (Localized High-Visibility) -->
+                <DataGridTextColumn Header="الحالة" Binding="{Binding DisplayConfidenceText}" Width="145" IsReadOnly="True">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                            <Setter Property="HorizontalAlignment" Value="Center"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                            <Setter Property="FontWeight" Value="SemiBold"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Confidence}" Value="Exact">
+                                    <Setter Property="Foreground" Value="{DynamicResource BrushSuccess}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsProvisionalSum}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding IsVariationOrder}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource BrushWarning}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

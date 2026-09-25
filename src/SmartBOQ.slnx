@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="SmartBOQ.App/SmartBOQ.App.csproj" />
+  <Project Path="SmartBOQ.Application/SmartBOQ.Application.csproj" />
+  <Project Path="SmartBOQ.CLI/SmartBOQ.CLI.csproj" />
+  <Project Path="SmartBOQ.Domain/SmartBOQ.Domain.csproj" />
+  <Project Path="SmartBOQ.Infrastructure/SmartBOQ.Infrastructure.csproj" />
+</Solution>

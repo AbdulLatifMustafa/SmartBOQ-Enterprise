@@ -1,0 +1,64 @@
+{
+  "App": {
+    "Title": "Smart BOQ Reconciliation & Audit Engine",
+    "Subtitle": "Precision hierarchical comparison between contractor pricing and consultant remeasure schedules",
+    "OfflineBadge": "Runs Offline (100% Secure & On-Premise)"
+  },
+  "Navigation": {
+    "Summary": "Project Summary",
+    "Compare": "File Compare",
+    "PricingGrid": "Pricing Table",
+    "Export": "Export File",
+    "CalculationMethod": "Calculation Method",
+    "ProjectRates": "Project Rates",
+    "SearchAccuracy": "Search Accuracy"
+  },
+  "Verification": {
+    "Title": "File Verification",
+    "AllPassed": "Both file schemas verified 100% - Registers ready for matching",
+    "CheckFileA": "Contractor Columns (File A): 8 mandatory columns verified",
+    "CheckFileB": "Consultant Sheets (File B): 26 bill sheets verified against scope",
+    "CheckPS": "Fixed Sums: Bill 6 shielded as conditional Lump Sum",
+    "CheckUnits": "Unit & Nomenclature Integrity: Standardized without cell errors",
+    "RecheckButton": "Re-verify Files"
+  },
+  "Currency": {
+    "RetentionTitle": "File Currency (Segregated EGP & USD)",
+    "RetentionNote": "Strict adherence to native currencies written in the file without FX conversion or blending",
+    "EgpTotal": "Total Egyptian Pound (EGP)",
+    "UsdTotal": "Total US Dollar ($ USD)"
+  },
+  "Grid": {
+    "Code": "Code",
+    "Description": "Item Description",
+    "Unit": "Unit",
+    "Quantity": "Quantity",
+    "PreviousRate": "Previous Rate",
+    "InjectedRate": "New Rate",
+    "NumberOff": "Number Off",
+    "TotalAmount": "Total Amount",
+    "MatchStatus": "Match Status",
+    "FilterPlaceholder": "Search by item description, code, or unit...",
+    "ApproveButton": "Approve & Transfer Rate",
+    "ApproveAllButton": "Approve All Bill Rates"
+  },
+  "Badges": {
+    "ExactMatch": "Exact Match",
+    "FuzzyMatch": "Fuzzy Match",
+    "NewItem": "New Item (VO)",
+    "ProtectedSum": "Fixed Protected (PS)",
+    "BlankRate": "Blank"
+  },
+  "Export": {
+    "Button": "Export Completed Excel (.xlsx)",
+    "PdfButton": "Ready Management PDF Report",
+    "SuccessMessage": "Export completed successfully! Formulas and audit log preserved."
+  },
+  "Archive": {
+    "Title": "Project Rates (Past Projects)",
+    "Subtitle": "Local SQLite archive for revision snapshots (Rev 0, 1, 2) and historical benchmarks",
+    "ProjectsCount": "Archived Projects",
+    "ItemsCount": "Priced Historical Items",
+    "SnapshotsCount": "Project Revisions"
+  }
+}

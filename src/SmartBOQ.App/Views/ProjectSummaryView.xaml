@@ -1,0 +1,220 @@
+<UserControl x:Class="SmartBOQ.App.Views.ProjectSummaryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             mc:Ignorable="d">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24">
+        <StackPanel MaxWidth="1400" HorizontalAlignment="Stretch">
+
+            <!-- TOP RESPONSIVE KPI CARDS (UniformGrid adaptively fills width) -->
+            <!-- TOP RESPONSIVE KPI CARDS (Unified Professional Corporate Blue & Slate) -->
+            <UniformGrid Columns="4" Margin="0,0,0,22">
+                <!-- Total Scanned Items -->
+                <Border Style="{StaticResource ModernCard}" Margin="0,0,12,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="إجمالي البنود المفحوصة" FontSize="13.5" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding TotalItemsCount, StringFormat={}{0:N0}}" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,4,0,0"/>
+                            <TextBlock Text="عبر 33 ورقة عمل" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3,0,0"/>
+                        </StackPanel>
+                        <Border Grid.Column="1" Background="{DynamicResource BrushBgCardHover}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Width="48" Height="48">
+                            <iconPacks:PackIconLucide Kind="ListOrdered" Width="22" Height="22" Foreground="{DynamicResource BrushPrimary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Exact Matches -->
+                <Border Style="{StaticResource ModernCard}" Margin="6,0,6,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="تطابق قطعي (100%)" FontSize="13.5" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding ExactMatchesCount, StringFormat={}{0:N0}}" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource BrushPrimary}" Margin="0,4,0,0"/>
+                            <TextBlock Text="مطابقة دقيقة بالاسم والوحدة" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3,0,0"/>
+                        </StackPanel>
+                        <Border Grid.Column="1" Background="{DynamicResource BrushBgCardHover}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Width="48" Height="48">
+                            <iconPacks:PackIconLucide Kind="CheckCheck" Width="22" Height="22" Foreground="{DynamicResource BrushPrimary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Variation Orders -->
+                <Border Style="{StaticResource ModernCard}" Margin="6,0,6,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="بنود مستحدثة (أوامر تغيير)" FontSize="13.5" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding VariationOrdersCount, StringFormat={}{0:N0}}" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,4,0,0"/>
+                            <TextBlock Text="تتطلب دراسة تسعير جديدة" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3,0,0"/>
+                        </StackPanel>
+                        <Border Grid.Column="1" Background="{DynamicResource BrushBgCardHover}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Width="48" Height="48">
+                            <iconPacks:PackIconLucide Kind="FilePlus" Width="22" Height="22" Foreground="{DynamicResource BrushPrimary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <!-- Provisional Sums Shielded -->
+                <Border Style="{StaticResource ModernCard}" Margin="12,0,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="مبالغ احتياطية (محمية)" FontSize="13.5" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding ProvisionalSumsCount, StringFormat={}{0:N0}}" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,4,0,0"/>
+                            <TextBlock Text="معزولة ومحمية من الحقن" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3,0,0"/>
+                        </StackPanel>
+                        <Border Grid.Column="1" Background="{DynamicResource BrushBgCardHover}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Width="48" Height="48">
+                            <iconPacks:PackIconLucide Kind="ShieldCheck" Width="22" Height="22" Foreground="{DynamicResource BrushPrimary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                    </Grid>
+                </Border>
+            </UniformGrid>
+
+            <!-- DUAL STRICT CURRENCY FINANCIAL CARDS (Zero FX Blending) -->
+            <Grid Margin="0,0,0,22">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1*"/>
+                    <ColumnDefinition Width="1*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Card 1: EGP Financial Summary -->
+                <Border Grid.Column="0" Style="{StaticResource ModernCard}" Margin="0,0,10,0">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                            <iconPacks:PackIconLucide Kind="Coins" Width="20" Height="20" Foreground="{DynamicResource BrushPrimary}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="الحسابات المالية بالجنيه المصري (EGP)" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <Grid Margin="0,5">
+                            <TextBlock Text="قيمة المناقصة الأصلية (Base Tender):" Foreground="{DynamicResource BrushTextSecondary}" FontSize="13.5"/>
+                            <TextBlock Text="{Binding BaseTenderEgpText}" HorizontalAlignment="Right" FontWeight="SemiBold" FontSize="14" Foreground="{DynamicResource BrushTextPrimary}"/>
+                        </Grid>
+                        <Separator Background="{DynamicResource BrushBorder}" Margin="0,6"/>
+
+                        <Grid Margin="0,5">
+                            <TextBlock Text="إجمالي إعادة القياس المحقون (Re-Measure):" Foreground="{DynamicResource BrushTextSecondary}" FontSize="13.5"/>
+                            <TextBlock Text="{Binding TotalInjectedEgpText}" HorizontalAlignment="Right" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource BrushPrimary}"/>
+                        </Grid>
+                        <Separator Background="{DynamicResource BrushBorder}" Margin="0,6"/>
+
+                        <Grid Margin="0,5">
+                            <TextBlock Text="الفارق المالي (Variance):" Foreground="{DynamicResource BrushTextSecondary}" FontSize="13.5"/>
+                            <TextBlock Text="{Binding VarianceEgpText}" HorizontalAlignment="Right" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource BrushTextPrimary}"/>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Card 2: USD Financial Summary -->
+                <Border Grid.Column="1" Style="{StaticResource ModernCard}" Margin="10,0,0,0">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                            <iconPacks:PackIconLucide Kind="DollarSign" Width="20" Height="20" Foreground="{DynamicResource BrushPrimary}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="الحسابات المالية بالدولار الأمريكي (USD)" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <Grid Margin="0,5">
+                            <TextBlock Text="إجمالي بنود الدولار الأمريكي:" Foreground="{DynamicResource BrushTextSecondary}" FontSize="13.5"/>
+                            <TextBlock Text="{Binding TotalInjectedUsdText}" HorizontalAlignment="Right" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource BrushPrimary}"/>
+                        </Grid>
+                        <Separator Background="{DynamicResource BrushBorder}" Margin="0,6"/>
+
+                        <Grid Margin="0,5">
+                            <TextBlock Text="فصل العملات الدقيق (Zero FX Blending):" Foreground="{DynamicResource BrushTextSecondary}" FontSize="13.5"/>
+                            <TextBlock Text="مفعل وصارم 100%" HorizontalAlignment="Right" FontWeight="SemiBold" FontSize="14" Foreground="{DynamicResource BrushPrimary}"/>
+                        </Grid>
+                        <Separator Background="{DynamicResource BrushBorder}" Margin="0,6"/>
+
+                        <TextBlock Text="* يتم الحفاظ على كل عملة كما وردت في ملف المقايسة دون أي تحويل بسعر صرف." FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,8,0,0"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- PRE-FLIGHT VERIFICATION STATUS CARD -->
+            <Border Style="{StaticResource ModernCard}">
+                <StackPanel>
+                    <Grid Margin="0,0,0,14">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <iconPacks:PackIconLucide Kind="CheckCheck" Width="20" Height="20" Foreground="{DynamicResource BrushPrimary}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="بوابة التحقق المسبق (Pre-Flight Verification Gate)" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding VerificationSummaryText}" HorizontalAlignment="Right" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource BrushPrimary}" VerticalAlignment="Center"/>
+                    </Grid>
+
+                    <TextBlock Text="يتحقق النظام مسبقاً من سلامة أعمدة المناقصة الثمانية الإلزامية وهيكل الـ 26 شيت وعزل شيتات المبالغ الاحتياطية قبل السماح بالمطابقة وحقن الأسعار." 
+                               TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" FontSize="13" Margin="0,0,0,14"/>
+
+                    <ItemsControl ItemsSource="{Binding VerificationReport.PassedChecks}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,4">
+                                    <iconPacks:PackIconLucide Kind="Check" Width="15" Height="15" Foreground="{DynamicResource BrushPrimary}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding}" FontSize="13" Foreground="{DynamicResource BrushTextPrimary}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- DELIVERABLES STATUS CARD (Visible after export) -->
+            <Border Margin="0,18,0,0">
+                <Border.Style>
+                    <Style TargetType="Border" BasedOn="{StaticResource ModernCard}">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsExported}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <Grid Margin="0,0,0,12">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <iconPacks:PackIconLucide Kind="CheckCheck" Width="20" Height="20" Foreground="{DynamicResource BrushSuccess}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="مخرجات الدمج والتقارير التنفيذية المكتملة" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource BrushSuccess}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,0,0,6">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                            <TextBlock Text="المقايسة المدمجة (مع سجل التدقيق Audit_Report وخريطة الربط Pricing_Linkage_Map):" FontSize="12.5" Foreground="{DynamicResource BrushTextSecondary}"/>
+                            <TextBlock Text="{Binding LastExportedSchedulePath}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <Button Grid.Column="1" Command="{Binding OpenReconciledFileCommand}" Style="{StaticResource ModernBtn}" Padding="14,7" Margin="10,0,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="FileSpreadsheet" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="فتح في Excel" FontSize="12.5" FontWeight="Bold"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Grid.Column="2" Command="{Binding OpenDashboardCommand}" Style="{StaticResource SecondaryBtn}" Padding="14,7" Margin="8,0,0,0">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="LayoutDashboard" Width="15" Height="15" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="فتح الداش بورد" FontSize="12.5" FontWeight="Bold"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

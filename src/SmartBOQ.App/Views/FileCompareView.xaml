@@ -1,0 +1,91 @@
+<UserControl x:Class="SmartBOQ.App.Views.FileCompareView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             mc:Ignorable="d">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24">
+        <StackPanel MaxWidth="1050" HorizontalAlignment="Stretch">
+
+            <TextBlock Text="إعداد الملفات وضبط معايير المطابقة" FontWeight="Bold" FontSize="20" Margin="0,0,0,18" Foreground="{DynamicResource BrushTextPrimary}"/>
+
+            <!-- File A Selection -->
+            <Border Style="{StaticResource ModernCard}" Margin="0,0,0,18">
+                <StackPanel>
+                    <TextBlock Text="1. ملف مقايسة المناقصة المسعر للمقاول (Contractor Priced BOQ)" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" Foreground="{DynamicResource BrushTextPrimary}"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding FileAPath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" FontSize="13.5"/>
+                        <Button Grid.Column="1" Command="{Binding BrowseFileACommand}" Style="{StaticResource SecondaryBtn}" Margin="12,0,0,0" Padding="16,8">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="استعراض..." FontWeight="SemiBold" FontSize="13.5"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- File B Selection -->
+            <Border Style="{StaticResource ModernCard}" Margin="0,0,0,18">
+                <StackPanel>
+                    <TextBlock Text="2. جدول الاستشاري / إعادة القياس (Consultant Schedule / Re-Measure)" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" Foreground="{DynamicResource BrushTextPrimary}"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding FileBPath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" FontSize="13.5"/>
+                        <Button Grid.Column="1" Command="{Binding BrowseFileBCommand}" Style="{StaticResource SecondaryBtn}" Margin="12,0,0,0" Padding="16,8">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="استعراض..." FontWeight="SemiBold" FontSize="13.5"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Match Sensitivity Slider -->
+            <Border Style="{StaticResource ModernCard}" Margin="0,0,0,24">
+                <StackPanel>
+                    <Grid Margin="0,0,0,12">
+                        <TextBlock Text="3. دقة البحث والمطابقة (Sensitivity Threshold):" FontWeight="SemiBold" FontSize="15" Foreground="{DynamicResource BrushTextPrimary}"/>
+                        <TextBlock Text="{Binding Sensitivity, StringFormat={}{0:P0}}" HorizontalAlignment="Right" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource BrushPrimary}"/>
+                    </Grid>
+                    <Slider Minimum="0.70" Maximum="1.00" Value="{Binding Sensitivity}" TickFrequency="0.05" IsSnapToTickEnabled="True" Height="26"/>
+                    <TextBlock Text="النسبة الموصى بها: 85% لضمان أعلى دقة عزل للبنود المستحدثة مع منع الأخطاء الإملائية." FontSize="12.5" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,8,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Action Buttons -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Command="{Binding VerifyCommand}" Style="{StaticResource SecondaryBtn}" Padding="18,12" Margin="0,0,12,0">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="ShieldCheck" Width="18" Height="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="فحص الملفات مسبقاً" FontSize="14" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+
+                <Button Command="{Binding ReconcileCommand}" Style="{StaticResource SecondaryBtn}" Padding="20,12" Margin="0,0,12,0">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="Table" Width="18" Height="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="مطابقة ومعاينة الجدول" FontSize="14" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+
+                <Button Command="{Binding ReconcileAndExportCommand}" Style="{StaticResource ModernBtn}" Padding="24,12">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="Download" Width="18" Height="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="بدء الدمج والتسعير والتصدير الفوري" FontSize="14" FontWeight="Bold"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

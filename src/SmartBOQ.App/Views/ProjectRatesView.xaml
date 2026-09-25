@@ -1,0 +1,43 @@
+<UserControl x:Class="SmartBOQ.App.Views.ProjectRatesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             mc:Ignorable="d">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24">
+        <StackPanel MaxWidth="1050" HorizontalAlignment="Stretch">
+            <TextBlock Text="قاعدة بيانات الأسعار المرجعية والسجلات التاريخية (SQLite)" FontWeight="Bold" FontSize="20" Margin="0,0,0,18" Foreground="{DynamicResource BrushTextPrimary}"/>
+
+            <Border Style="{StaticResource ModernCard}" Margin="0,0,0,18">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <iconPacks:PackIconLucide Kind="Database" Width="20" Height="20" Foreground="{DynamicResource BrushPrimary}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="مستودع البيانات المحلي المدمج" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="يتم تخزين كافة التعديلات والتسعيرات السابقة محلياً على جهازك في قاعدة بيانات SQLite مدمجة لسرعة الاستعلام دون اتصال بالإنترنت." 
+                               Foreground="{DynamicResource BrushTextSecondary}" FontSize="13" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource ModernCard}">
+                <StackPanel>
+                    <TextBlock Text="البحث في الأسعار التاريخية السابقة:" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,12" Foreground="{DynamicResource BrushTextPrimary}"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="removal of debris" Style="{StaticResource ModernTextBox}" FontSize="13.5"/>
+                        <Button Grid.Column="1" Style="{StaticResource ModernBtn}" Margin="12,0,0,0" Padding="18,9">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="Search" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="بحث في السجلات" FontSize="13.5" FontWeight="SemiBold"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
