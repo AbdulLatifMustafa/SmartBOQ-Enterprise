@@ -46,6 +46,7 @@ public sealed class ComparePipelineViewModel : ChildViewModelBase
     public ObservableCollection<ColumnBindingOption> AvailableSourceColumns { get; } = [];
     public ObservableCollection<ColumnBindingOption> AvailableTargetColumns { get; } = [];
     public ObservableCollection<AlgorithmicPlanStep> AlgorithmicSteps { get; } = [];
+    public ObservableCollection<MappingPreset> SavedPresets { get; } = [];
 
     // Properties
     public int SelectedCompareSubTab { get => _selectedCompareSubTab; set => SetProperty(ref _selectedCompareSubTab, value); }
@@ -85,6 +86,23 @@ public sealed class ComparePipelineViewModel : ChildViewModelBase
     public bool HasIngestedFiles => IngestedFiles.Count > 0;
     public bool HasNoIngestedFiles => IngestedFiles.Count == 0;
 
+    private MappingPreset? _selectedPreset;
+    private string? _newPresetName;
+
+    public MappingPreset? SelectedPreset
+    {
+        get => _selectedPreset;
+        set
+        {
+            if (SetProperty(ref _selectedPreset, value) && value != null)
+            {
+                ApplyPreset(value);
+            }
+        }
+    }
+
+    public string? NewPresetName { get => _newPresetName; set => SetProperty(ref _newPresetName, value); }
+
     // Commands
     public AsyncRelayCommand AddNewFileCommand { get; }
     public RelayCommand RemoveFileCommand { get; }
@@ -99,6 +117,10 @@ public sealed class ComparePipelineViewModel : ChildViewModelBase
     public RelayCommand OpenSheetLocationCommand { get; }
     public RelayCommand OpenLinkedSheetLocationCommand { get; }
     public RelayCommand OpenLinkedSourceSheetLocationCommand { get; }
+    public AsyncRelayCommand SaveCurrentPresetCommand { get; }
+    public RelayCommand ApplyPresetCommand { get; }
+    public AsyncRelayCommand DeletePresetCommand { get; }
+    public AsyncRelayCommand RefreshPresetsCommand { get; }
 
     public ComparePipelineViewModel(IMainViewModelCoordinator coordinator) : base(coordinator)
     {
@@ -115,8 +137,13 @@ public sealed class ComparePipelineViewModel : ChildViewModelBase
         OpenSheetLocationCommand = new RelayCommand(p => OpenSheetLocation(p as BoqSheetSummary));
         OpenLinkedSheetLocationCommand = new RelayCommand(p => OpenLinkedSheetLocation(p as SheetLinkMappingViewModel));
         OpenLinkedSourceSheetLocationCommand = new RelayCommand(p => OpenLinkedSourceSheetLocation(p as SheetLinkMappingViewModel));
+        SaveCurrentPresetCommand = new AsyncRelayCommand(() => SaveCurrentPresetAsync());
+        ApplyPresetCommand = new RelayCommand(p => ApplyPreset(p as MappingPreset ?? SelectedPreset));
+        DeletePresetCommand = new AsyncRelayCommand(() => DeletePresetAsync(SelectedPreset));
+        RefreshPresetsCommand = new AsyncRelayCommand(RefreshPresetsAsync);
 
         BuildAlgorithmicPlan();
+        _ = RefreshPresetsAsync();
     }
 
     public async Task AddNewFileAsync()
@@ -418,4 +445,108 @@ public sealed class ComparePipelineViewModel : ChildViewModelBase
             ExcelNavigator.OpenWorkbookAtSheet(sourceFile.FilePath, sheetName, mapping.SourceStartRow);
         }
     }
+
+    #region Mapping Presets Engine
+
+    public async Task RefreshPresetsAsync()
+    {
+        try
+        {
+            var presets = await Service.GetMappingPresetsAsync();
+            SavedPresets.Clear();
+            foreach (var p in presets)
+            {
+                SavedPresets.Add(p);
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to load presets: {ex.Message}");
+        }
+    }
+
+    public async Task SaveCurrentPresetAsync(object? parameter = null)
+    {
+        string? name = parameter as string ?? NewPresetName?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = $"Preset_{DateTime.Now:yyyyMMdd_HHmm}";
+        }
+
+        var preset = new MappingPreset
+        {
+            PresetName = name,
+            ContractorName = IngestedFiles.FirstOrDefault(f => f.Role == BoqFileRole.ContractorPriced)?.FileName ?? string.Empty,
+            SourceRateCol = SelectedSourceRateCol?.ColumnIndex ?? -1,
+            TargetRateCol = SelectedTargetRateCol?.ColumnIndex ?? -1,
+            SourceDescCol = SelectedSourceDescCol?.ColumnIndex ?? -1,
+            TargetDescCol = SelectedTargetDescCol?.ColumnIndex ?? -1,
+            SourceCodeCol = SelectedSourceCodeCol?.ColumnIndex ?? -1,
+            TargetCodeCol = SelectedTargetCodeCol?.ColumnIndex ?? -1,
+            SourceQtyCol = SelectedSourceQtyCol?.ColumnIndex ?? -1,
+            TargetQtyCol = SelectedTargetQtyCol?.ColumnIndex ?? -1,
+            SourceUnitCol = SelectedSourceUnitCol?.ColumnIndex ?? -1,
+            TargetUnitCol = SelectedTargetUnitCol?.ColumnIndex ?? -1,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        await ExecuteAsync(async () =>
+        {
+            await Service.SaveMappingPresetAsync(preset);
+            await RefreshPresetsAsync();
+            SelectedPreset = SavedPresets.FirstOrDefault(p => p.PresetName == name);
+            NewPresetName = string.Empty;
+            SetStatus($"تم حفظ إعداد التوجيه والقنوات بنجاح: {name}");
+        }, "جارٍ حفظ إعداد القنوات...");
+    }
+
+    public void ApplyPreset(MappingPreset? preset)
+    {
+        if (preset == null) return;
+
+        if (preset.SourceRateCol >= 0)
+            SelectedSourceRateCol = AvailableSourceColumns.FirstOrDefault(c => c.ColumnIndex == preset.SourceRateCol) ?? SelectedSourceRateCol;
+        if (preset.TargetRateCol >= 0)
+            SelectedTargetRateCol = AvailableTargetColumns.FirstOrDefault(c => c.ColumnIndex == preset.TargetRateCol) ?? SelectedTargetRateCol;
+
+        if (preset.SourceDescCol >= 0)
+            SelectedSourceDescCol = AvailableSourceColumns.FirstOrDefault(c => c.ColumnIndex == preset.SourceDescCol) ?? SelectedSourceDescCol;
+        if (preset.TargetDescCol >= 0)
+            SelectedTargetDescCol = AvailableTargetColumns.FirstOrDefault(c => c.ColumnIndex == preset.TargetDescCol) ?? SelectedTargetDescCol;
+
+        if (preset.SourceCodeCol >= 0)
+            SelectedSourceCodeCol = AvailableSourceColumns.FirstOrDefault(c => c.ColumnIndex == preset.SourceCodeCol) ?? SelectedSourceCodeCol;
+        if (preset.TargetCodeCol >= 0)
+            SelectedTargetCodeCol = AvailableTargetColumns.FirstOrDefault(c => c.ColumnIndex == preset.TargetCodeCol) ?? SelectedTargetCodeCol;
+
+        if (preset.SourceQtyCol >= 0)
+            SelectedSourceQtyCol = AvailableSourceColumns.FirstOrDefault(c => c.ColumnIndex == preset.SourceQtyCol) ?? SelectedSourceQtyCol;
+        if (preset.TargetQtyCol >= 0)
+            SelectedTargetQtyCol = AvailableTargetColumns.FirstOrDefault(c => c.ColumnIndex == preset.TargetQtyCol) ?? SelectedTargetQtyCol;
+
+        if (preset.SourceUnitCol >= 0)
+            SelectedSourceUnitCol = AvailableSourceColumns.FirstOrDefault(c => c.ColumnIndex == preset.SourceUnitCol) ?? SelectedSourceUnitCol;
+        if (preset.TargetUnitCol >= 0)
+            SelectedTargetUnitCol = AvailableTargetColumns.FirstOrDefault(c => c.ColumnIndex == preset.TargetUnitCol) ?? SelectedTargetUnitCol;
+
+        ApplyColumnMapping();
+        SetStatus($"تم تطبيق إعداد التوجيه: {preset.PresetName}");
+    }
+
+    public async Task DeletePresetAsync(MappingPreset? preset)
+    {
+        if (preset == null) return;
+        await ExecuteAsync(async () =>
+        {
+            await Service.DeleteMappingPresetAsync(preset.PresetName);
+            await RefreshPresetsAsync();
+            if (SelectedPreset?.PresetName == preset.PresetName)
+            {
+                SelectedPreset = null;
+            }
+            SetStatus($"تم حذف إعداد التوجيه: {preset.PresetName}");
+        }, "جارٍ حذف إعداد القنوات...");
+    }
+
+    #endregion
 }

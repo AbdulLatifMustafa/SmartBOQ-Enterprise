@@ -78,4 +78,9 @@ public abstract class BaseSqliteRepository : ISqliteRepository
     public abstract Task<IReadOnlyList<ProjectSnapshot>> GetSnapshotsAsync(string projectCode, CancellationToken ct = default);
     public abstract Task<IReadOnlyList<BoqItem>> FindHistoricalRatesAsync(string normalizedDescription, string unit, CancellationToken ct = default);
     public abstract Task<IReadOnlyList<HistoricalRateItem>> SearchHistoricalRatesAsync(string? searchTerm = null, int limit = 200, CancellationToken ct = default);
+    public abstract Task SaveMappingPresetAsync(MappingPreset preset, CancellationToken ct = default);
+    public abstract Task<IReadOnlyList<MappingPreset>> GetMappingPresetsAsync(CancellationToken ct = default);
+    public abstract Task DeleteMappingPresetAsync(string presetName, CancellationToken ct = default);
+    public abstract Task RecordAuditLogAsync(ItemAuditLog log, CancellationToken ct = default);
+    public abstract Task<IReadOnlyList<ItemAuditLog>> GetAuditLogsForItemAsync(string itemId, CancellationToken ct = default);
 }

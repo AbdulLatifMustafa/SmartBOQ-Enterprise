@@ -172,6 +172,7 @@ public sealed class BoqReconciliationService
         ColumnMappingModel? columnMappings = null,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         var stopwatch = Stopwatch.StartNew();
 
         // 1. Read Target Consultant workbook
@@ -439,6 +440,21 @@ public sealed class BoqReconciliationService
     {
         return _repository.SearchHistoricalRatesAsync(searchTerm, limit, ct);
     }
+
+    public Task SaveMappingPresetAsync(MappingPreset preset, CancellationToken ct = default) =>
+        _repository.SaveMappingPresetAsync(preset, ct);
+
+    public Task<IReadOnlyList<MappingPreset>> GetMappingPresetsAsync(CancellationToken ct = default) =>
+        _repository.GetMappingPresetsAsync(ct);
+
+    public Task DeleteMappingPresetAsync(string presetName, CancellationToken ct = default) =>
+        _repository.DeleteMappingPresetAsync(presetName, ct);
+
+    public Task RecordAuditLogAsync(ItemAuditLog log, CancellationToken ct = default) =>
+        _repository.RecordAuditLogAsync(log, ct);
+
+    public Task<IReadOnlyList<ItemAuditLog>> GetAuditLogsForItemAsync(string itemId, CancellationToken ct = default) =>
+        _repository.GetAuditLogsForItemAsync(itemId, ct);
 
     private static IReadOnlyList<CurrencyBucketSummary> ComputeCurrencySummaries(
         IReadOnlyList<BoqItem> sourceItems,

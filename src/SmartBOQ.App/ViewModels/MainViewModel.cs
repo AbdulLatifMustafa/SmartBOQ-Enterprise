@@ -17,6 +17,7 @@ using SmartBOQ.Infrastructure.Matching;
 using SmartBOQ.Infrastructure.Parsers;
 using SmartBOQ.Infrastructure.Storage;
 using SmartBOQ.Infrastructure.Verification;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace SmartBOQ.App.ViewModels;
 
@@ -114,34 +115,29 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
     // Algorithmic Plan Steps
     public ObservableCollection<AlgorithmicPlanStep> AlgorithmicSteps { get; } = [];
 
-    public MainViewModel()
+    // User Cancellation
+    private CancellationTokenSource? _activeOperationCts;
+    public bool CanCancel => _activeOperationCts != null && !_activeOperationCts.IsCancellationRequested;
+    public RelayCommand CancelOperationCommand { get; }
+
+    public MainViewModel() : this(
+        App.Services?.GetService<BoqReconciliationService>() ?? CreateDefaultService(out var dbPath),
+        App.Services?.GetService<ILocalizationService>() ?? CreateDefaultLocalization(),
+        App.Services?.GetService<IBoqInspector>() ?? new BoqInspectorService(),
+        App.Services != null ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "smartboq.db") : null)
     {
-        _loc = new LocalizationService();
-        _loc.SetCulture("ar-EG");
+    }
 
-        _inspector = new BoqInspectorService();
-        string exeDir = AppDomain.CurrentDomain.BaseDirectory;
-        string dbPath = Path.Combine(exeDir, "smartboq.db");
-        string oldAppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SmartBOQ", "smartboq.db");
-        if (!File.Exists(dbPath) && File.Exists(oldAppData))
-        {
-            try
-            {
-                File.Copy(oldAppData, dbPath, overwrite: false);
-            }
-            catch { }
-        }
-        DatabaseFilePath = dbPath;
-
-        _service = new BoqReconciliationService(
-            new PreFlightVerificationGate(),
-            new HatchwayFlatReader(),
-            new HierarchicalBoqReader(),
-            new HybridWeightedMatcher(),
-            new ClosedXmlExporter(),
-            new SqliteBoqRepository(dbPath),
-            _inspector
-        );
+    public MainViewModel(
+        BoqReconciliationService service,
+        ILocalizationService localization,
+        IBoqInspector inspector,
+        string? databaseFilePath = null)
+    {
+        _loc = localization;
+        _inspector = inspector;
+        _service = service;
+        DatabaseFilePath = databaseFilePath ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "smartboq.db");
 
         // Instantiate Specialized Child ViewModels via OOP Coordination
         Compare = new ComparePipelineViewModel(this);
@@ -151,6 +147,8 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         Export = new ExportFileViewModel(this);
 
         FilteredItems = CollectionViewSource.GetDefaultView(PagedItems);
+
+        CancelOperationCommand = new RelayCommand(_ => CancelActiveOperation());
 
         // Pre-initialize SQLite schema and ensure migrations run immediately on startup
         _ = Task.Run(async () =>
@@ -557,6 +555,22 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
     public int TotalLinkedTablesCount => SheetLinkMappings.Count(m => m.Status == SheetLinkStatus.AutoMatched || m.Status == SheetLinkStatus.ManualMatched || m.Status == SheetLinkStatus.GlobalSearch);
     public int TotalShieldedTablesCount => SheetLinkMappings.Count(m => m.Status == SheetLinkStatus.ShieldedPS);
 
+    // Preset Routing Delegations
+    public ObservableCollection<MappingPreset> SavedPresets => Compare.SavedPresets;
+    public MappingPreset? SelectedPreset { get => Compare.SelectedPreset; set => Compare.SelectedPreset = value; }
+    public string? NewPresetName { get => Compare.NewPresetName; set => Compare.NewPresetName = value; }
+    public AsyncRelayCommand SaveCurrentPresetCommand => Compare.SaveCurrentPresetCommand;
+    public RelayCommand ApplyPresetCommand => Compare.ApplyPresetCommand;
+    public AsyncRelayCommand DeletePresetCommand => Compare.DeletePresetCommand;
+    public AsyncRelayCommand RefreshPresetsCommand => Compare.RefreshPresetsCommand;
+
+    // Audit Trail Methods
+    public Task RecordAuditLogAsync(ItemAuditLog log, CancellationToken ct = default) =>
+        _service.RecordAuditLogAsync(log, ct);
+
+    public Task<IReadOnlyList<ItemAuditLog>> GetAuditLogsForItemAsync(string itemId, CancellationToken ct = default) =>
+        _service.GetAuditLogsForItemAsync(itemId, ct);
+
     public FlowDirection UiFlowDirection { get => _uiFlowDirection; set => SetField(ref _uiFlowDirection, value); }
     public string CurrentLanguageCode => _loc.CurrentCulture;
     public bool IsArabic => _loc.CurrentCulture.StartsWith("ar", StringComparison.OrdinalIgnoreCase);
@@ -807,6 +821,48 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
 
     #region Base Command Handlers
 
+    public void CancelActiveOperation()
+    {
+        if (_activeOperationCts != null && !_activeOperationCts.IsCancellationRequested)
+        {
+            _activeOperationCts.Cancel();
+            StatusMessage = IsArabic ? "جارٍ إلغاء العملية بناءً على طلب المستخدم..." : "Cancelling operation by user request...";
+            OnPropertyChanged(nameof(CanCancel));
+        }
+    }
+
+    private static ILocalizationService CreateDefaultLocalization()
+    {
+        var loc = new LocalizationService();
+        loc.SetCulture("ar-EG");
+        return loc;
+    }
+
+    private static BoqReconciliationService CreateDefaultService(out string dbPath)
+    {
+        string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+        dbPath = Path.Combine(exeDir, "smartboq.db");
+        string oldAppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SmartBOQ", "smartboq.db");
+        if (!File.Exists(dbPath) && File.Exists(oldAppData))
+        {
+            try
+            {
+                File.Copy(oldAppData, dbPath, overwrite: false);
+            }
+            catch { }
+        }
+
+        return new BoqReconciliationService(
+            new PreFlightVerificationGate(),
+            new HatchwayFlatReader(),
+            new HierarchicalBoqReader(),
+            new HybridWeightedMatcher(),
+            new ClosedXmlExporter(),
+            new SqliteBoqRepository(dbPath),
+            new BoqInspectorService()
+        );
+    }
+
     private void UpdateDefaultOutputPath()
     {
         if (string.IsNullOrWhiteSpace(_fileBPath)) return;
@@ -885,14 +941,21 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             return;
         }
 
+        _activeOperationCts = new CancellationTokenSource();
+        OnPropertyChanged(nameof(CanCancel));
         try
         {
+            var ct = _activeOperationCts.Token;
             IsLoading = true;
             StatusMessage = IsArabic ? "جارٍ فحص الملفات..." : "Verifying files schema & integrity...";
-            VerificationReport = await _service.VerifyFilesAsync(FileAPath, FileBPath);
+            VerificationReport = await _service.VerifyFilesAsync(FileAPath, FileBPath, ct);
             StatusMessage = VerificationReport.IsValid
                 ? (IsArabic ? "اكتمل الفحص بنجاح!" : "Pre-flight verification passed!")
                 : (IsArabic ? "يوجد أخطاء في الفحص!" : "Verification failed!");
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = IsArabic ? "تم إلغاء فحص الملفات." : "Verification cancelled.";
         }
         catch (Exception ex)
         {
@@ -900,6 +963,9 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         }
         finally
         {
+            _activeOperationCts?.Dispose();
+            _activeOperationCts = null;
+            OnPropertyChanged(nameof(CanCancel));
             IsLoading = false;
         }
     }
@@ -926,8 +992,11 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             return;
         }
 
+        _activeOperationCts = new CancellationTokenSource();
+        OnPropertyChanged(nameof(CanCancel));
         try
         {
+            var ct = _activeOperationCts.Token;
             IsLoading = true;
             ProgressPercentage = 10;
             StatusMessage = IsArabic ? "جارٍ قراءة الملفات ومطابقة البنود بالخوارزميات الذكية..." : "Reconciling line items with intelligent algorithms...";
@@ -949,7 +1018,10 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 FileBPath,
                 Sensitivity,
                 SheetLinkMappings.Select(m => m.ToModel()).ToList(),
-                ActiveColumnMapping);
+                ActiveColumnMapping,
+                ct);
+
+            ct.ThrowIfCancellationRequested();
 
             // Sort so that PRICED / MATCHED items appear at the very top!
             var sortedPairs = result.MatchedPairs
@@ -979,6 +1051,10 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
 
             SelectedTabIndex = 2; // Jump to Pricing Table tab
         }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = IsArabic ? "تم إلغاء عملية المطابقة بواسطة المستخدم." : "Matching cancelled by user.";
+        }
         catch (Exception ex)
         {
             StatusMessage = $"Error: {ex.Message}";
@@ -990,6 +1066,9 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         }
         finally
         {
+            _activeOperationCts?.Dispose();
+            _activeOperationCts = null;
+            OnPropertyChanged(nameof(CanCancel));
             IsLoading = false;
         }
     }
@@ -1021,9 +1100,12 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             if (Result == null || MatchedPairs.Count == 0) return;
         }
 
+        _activeOperationCts = new CancellationTokenSource();
+        OnPropertyChanged(nameof(CanCancel));
         ThrottledProgress<int>? progress = null;
         try
         {
+            var ct = _activeOperationCts.Token;
             IsLoading = true;
             ProgressPercentage = 10;
             progress = new ThrottledProgress<int>(pct => ProgressPercentage = (int)(pct * 0.7), throttleIntervalMs: 50);
@@ -1058,7 +1140,6 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
 
                 if (prompt == MessageBoxResult.Cancel)
                 {
-                    IsLoading = false;
                     StatusMessage = IsArabic ? "تم إلغاء التصدير." : "Export cancelled.";
                     return;
                 }
@@ -1083,6 +1164,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 DashboardFilePath = dashboardPath;
             }
 
+            ct.ThrowIfCancellationRequested();
             StatusMessage = IsArabic ? "جارٍ حقن الأسعار وإنشاء شيتات التدقيق والربط..." : "Injecting rates and building audit sheets...";
 
             // Automatically ensure all valid matched pairs are approved for injection
@@ -1101,17 +1183,21 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 MatchedPairs.ToList(), 
                 FileAPath, 
                 enableDynamicLinking: true, 
-                progress);
+                progress,
+                ct);
 
+            ct.ThrowIfCancellationRequested();
             ProgressPercentage = 75;
             StatusMessage = IsArabic ? "جارٍ إنشاء لوحة المؤشرات المستقلة (Dashboard)..." : "Generating standalone Executive Dashboard...";
 
             // 2. Export the Standalone Executive Dashboard
             await Task.Run(() =>
             {
+                ct.ThrowIfCancellationRequested();
                 ClosedXmlExporter.ExportStandaloneDashboard(dashboardPath, MatchedPairs.ToList(), FileAPath);
-            });
+            }, ct);
 
+            ct.ThrowIfCancellationRequested();
             ProgressPercentage = 90;
             StatusMessage = IsArabic ? "جارٍ أرشفة السجل التاريخي..." : "Archiving snapshot to SQLite...";
 
@@ -1127,7 +1213,8 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 invoiceName: invoiceOrProj,
                 sourceFileName: !string.IsNullOrWhiteSpace(FileAPath) ? Path.GetFileName(FileAPath) : string.Empty,
                 targetFileName: !string.IsNullOrWhiteSpace(FileBPath) ? Path.GetFileName(FileBPath) : string.Empty,
-                exportFilePath: OutputFilePath);
+                exportFilePath: OutputFilePath,
+                ct: ct);
 
             _ = ExecuteHistoricalSearchAsync(HistoricalSearchQuery);
 
@@ -1155,6 +1242,10 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             {
                 OpenPricedFile();
             }
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = IsArabic ? "تم إلغاء عملية التصدير بواسطة المستخدم." : "Export cancelled by user.";
         }
         catch (IOException ioEx)
         {
@@ -1206,6 +1297,9 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         }
         finally
         {
+            _activeOperationCts?.Dispose();
+            _activeOperationCts = null;
+            OnPropertyChanged(nameof(CanCancel));
             IsLoading = false;
         }
     }

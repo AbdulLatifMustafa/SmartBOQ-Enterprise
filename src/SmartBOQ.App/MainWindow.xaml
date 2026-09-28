@@ -94,8 +94,20 @@
                 <!-- Progress Bar & Indicator -->
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <ProgressBar Width="160" Height="8" Value="{Binding ProgressPercentage}" 
-                                 Visibility="{Binding IsLoading, Converter={x:Null}}" 
+                                 Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" 
                                  Foreground="{DynamicResource BrushPrimary}" Background="{DynamicResource BrushInputBg}" BorderThickness="0" Margin="0,0,12,0"/>
+
+                    <!-- User Cancellation Button -->
+                    <Button Command="{Binding CancelOperationCommand}" 
+                            Visibility="{Binding CanCancel, Converter={StaticResource BoolToVis}}"
+                            Background="#3A1C1C" Foreground="{DynamicResource BrushDanger}" BorderBrush="{DynamicResource BrushDanger}"
+                            BorderThickness="1" Padding="8,3" Margin="0,0,12,0" Cursor="Hand" ToolTip="إلغاء العملية الحالية">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconLucide Kind="XCircle" Width="13" Height="13" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="إلغاء المعالجة" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
                     <TextBlock Text="SmartBOQ Engine v2.0" FontSize="11.5" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center"/>
                 </StackPanel>
             </Grid>

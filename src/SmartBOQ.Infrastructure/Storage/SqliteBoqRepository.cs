@@ -2,6 +2,7 @@ using Dapper;
 using Fastenshtein;
 using SmartBOQ.Domain.Enums;
 using SmartBOQ.Domain.Models;
+using SmartBOQ.Infrastructure.Storage.Migrations;
 
 namespace SmartBOQ.Infrastructure.Storage;
 
@@ -11,6 +12,8 @@ namespace SmartBOQ.Infrastructure.Storage;
 /// </summary>
 public sealed class SqliteBoqRepository : BaseSqliteRepository
 {
+    private readonly DatabaseMigrator _migrator = new();
+
     public SqliteBoqRepository(string? databasePath = null) : base(databasePath)
     {
     }
@@ -19,84 +22,7 @@ public sealed class SqliteBoqRepository : BaseSqliteRepository
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(ct);
-
-        const string schemaSql = """
-            PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = NORMAL;
-
-            CREATE TABLE IF NOT EXISTS Snapshots (
-                RevisionId INTEGER PRIMARY KEY AUTOINCREMENT,
-                ProjectCode TEXT NOT NULL,
-                RevisionCode TEXT NOT NULL,
-                InvoiceName TEXT,
-                SourceFileName TEXT,
-                TargetFileName TEXT,
-                ExportFilePath TEXT,
-                SnapshotDate TEXT NOT NULL,
-                TotalValueEgp REAL NOT NULL,
-                TotalValueUsd REAL NOT NULL,
-                TotalItemsCount INTEGER NOT NULL,
-                ContentHash TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS SnapshotItems (
-                Id TEXT PRIMARY KEY,
-                RevisionId INTEGER NOT NULL,
-                BillNumber TEXT NOT NULL,
-                SectionName TEXT,
-                ItemCode TEXT,
-                Description TEXT NOT NULL,
-                NormalizedDescription TEXT NOT NULL,
-                Unit TEXT NOT NULL,
-                Quantity REAL NOT NULL,
-                UnitRate REAL,
-                TotalAmount REAL,
-                Currency TEXT NOT NULL,
-                ItemType INTEGER NOT NULL,
-                FOREIGN KEY (RevisionId) REFERENCES Snapshots(RevisionId) ON DELETE CASCADE
-            );
-
-            CREATE INDEX IF NOT EXISTS IX_SnapshotItems_NormDesc_Unit 
-            ON SnapshotItems(NormalizedDescription, Unit);
-
-            CREATE INDEX IF NOT EXISTS IX_Snapshots_ProjectCode 
-            ON Snapshots(ProjectCode);
-
-            CREATE INDEX IF NOT EXISTS IX_SnapshotItems_Revision_Rate
-            ON SnapshotItems(RevisionId, UnitRate);
-        """;
-
-        await connection.ExecuteAsync(schemaSql);
-
-        // Dynamically inspect existing columns in Snapshots table and add missing ones
-        try
-        {
-            var cols = (await connection.QueryAsync<string>("SELECT name FROM pragma_table_info('Snapshots');")).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (!cols.Contains("InvoiceName"))
-            {
-                await connection.ExecuteAsync("ALTER TABLE Snapshots ADD COLUMN InvoiceName TEXT;");
-            }
-            if (!cols.Contains("SourceFileName"))
-            {
-                await connection.ExecuteAsync("ALTER TABLE Snapshots ADD COLUMN SourceFileName TEXT;");
-            }
-            if (!cols.Contains("TargetFileName"))
-            {
-                await connection.ExecuteAsync("ALTER TABLE Snapshots ADD COLUMN TargetFileName TEXT;");
-            }
-            if (!cols.Contains("ExportFilePath"))
-            {
-                await connection.ExecuteAsync("ALTER TABLE Snapshots ADD COLUMN ExportFilePath TEXT;");
-            }
-        }
-        catch
-        {
-            // Fallback alter attempts
-            try { await connection.ExecuteAsync("ALTER TABLE Snapshots ADD COLUMN InvoiceName TEXT;"); } catch { }
-            try { await connection.ExecuteAsync("ALTER TABLE Snapshots ADD COLUMN SourceFileName TEXT;"); } catch { }
-            try { await connection.ExecuteAsync("ALTER TABLE Snapshots ADD COLUMN TargetFileName TEXT;"); } catch { }
-            try { await connection.ExecuteAsync("ALTER TABLE Snapshots ADD COLUMN ExportFilePath TEXT;"); } catch { }
-        }
+        await _migrator.MigrateAsync(connection, ct);
     }
 
     public override async Task SaveSnapshotAsync(ProjectSnapshot snapshot, IReadOnlyList<BoqItem> items, CancellationToken ct = default)
@@ -459,4 +385,165 @@ public sealed class SqliteBoqRepository : BaseSqliteRepository
         }
         return list;
     }
+
+    #region Mapping Presets & Audit Trail
+
+    public override async Task SaveMappingPresetAsync(MappingPreset preset, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+        await InitializeDatabaseAsync(ct);
+
+        const string sql = """
+            INSERT INTO MappingPresets (
+                PresetName, ContractorName, SourceRateCol, TargetRateCol,
+                SourceDescCol, TargetDescCol, SourceCodeCol, TargetCodeCol,
+                SourceQtyCol, TargetQtyCol, SourceUnitCol, TargetUnitCol, CreatedAt
+            ) VALUES (
+                @PresetName, @ContractorName, @SourceRateCol, @TargetRateCol,
+                @SourceDescCol, @TargetDescCol, @SourceCodeCol, @TargetCodeCol,
+                @SourceQtyCol, @TargetQtyCol, @SourceUnitCol, @TargetUnitCol, @CreatedAt
+            )
+            ON CONFLICT(PresetName) DO UPDATE SET
+                ContractorName = excluded.ContractorName,
+                SourceRateCol = excluded.SourceRateCol,
+                TargetRateCol = excluded.TargetRateCol,
+                SourceDescCol = excluded.SourceDescCol,
+                TargetDescCol = excluded.TargetDescCol,
+                SourceCodeCol = excluded.SourceCodeCol,
+                TargetCodeCol = excluded.TargetCodeCol,
+                SourceQtyCol = excluded.SourceQtyCol,
+                TargetQtyCol = excluded.TargetQtyCol,
+                SourceUnitCol = excluded.SourceUnitCol,
+                TargetUnitCol = excluded.TargetUnitCol,
+                CreatedAt = excluded.CreatedAt;
+        """;
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct);
+        await connection.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            preset.PresetName,
+            preset.ContractorName,
+            preset.SourceRateCol,
+            preset.TargetRateCol,
+            preset.SourceDescCol,
+            preset.TargetDescCol,
+            preset.SourceCodeCol,
+            preset.TargetCodeCol,
+            preset.SourceQtyCol,
+            preset.TargetQtyCol,
+            preset.SourceUnitCol,
+            preset.TargetUnitCol,
+            CreatedAt = preset.CreatedAt.ToString("o")
+        }, cancellationToken: ct));
+    }
+
+    public override async Task<IReadOnlyList<MappingPreset>> GetMappingPresetsAsync(CancellationToken ct = default)
+    {
+        await InitializeDatabaseAsync(ct);
+
+        const string sql = "SELECT * FROM MappingPresets ORDER BY CreatedAt DESC;";
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct);
+        var rows = await connection.QueryAsync(new CommandDefinition(sql, cancellationToken: ct));
+
+        var list = new List<MappingPreset>();
+        foreach (var r in rows)
+        {
+            list.Add(new MappingPreset
+            {
+                PresetName = r.PresetName,
+                ContractorName = r.ContractorName ?? string.Empty,
+                SourceRateCol = (int)r.SourceRateCol,
+                TargetRateCol = (int)r.TargetRateCol,
+                SourceDescCol = (int)r.SourceDescCol,
+                TargetDescCol = (int)r.TargetDescCol,
+                SourceCodeCol = (int)r.SourceCodeCol,
+                TargetCodeCol = (int)r.TargetCodeCol,
+                SourceQtyCol = (int)r.SourceQtyCol,
+                TargetQtyCol = (int)r.TargetQtyCol,
+                SourceUnitCol = (int)r.SourceUnitCol,
+                TargetUnitCol = (int)r.TargetUnitCol,
+                CreatedAt = DateTime.TryParse((string)r.CreatedAt, out DateTime dt) ? dt : DateTime.UtcNow
+            });
+        }
+        return list;
+    }
+
+    public override async Task DeleteMappingPresetAsync(string presetName, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(presetName);
+        await InitializeDatabaseAsync(ct);
+
+        const string sql = "DELETE FROM MappingPresets WHERE PresetName = @PresetName;";
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct);
+        await connection.ExecuteAsync(new CommandDefinition(sql, new { PresetName = presetName }, cancellationToken: ct));
+    }
+
+    public override async Task RecordAuditLogAsync(ItemAuditLog log, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(log);
+        await InitializeDatabaseAsync(ct);
+
+        const string sql = """
+            INSERT INTO ItemAuditTrail (
+                ItemId, BillNumber, ItemCode, Description, OldRate, NewRate, Action, Reason, Engineer, Timestamp
+            ) VALUES (
+                @ItemId, @BillNumber, @ItemCode, @Description, @OldRate, @NewRate, @Action, @Reason, @Engineer, @Timestamp
+            );
+        """;
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct);
+        await connection.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            log.ItemId,
+            log.BillNumber,
+            log.ItemCode,
+            log.Description,
+            log.OldRate,
+            log.NewRate,
+            log.Action,
+            log.Reason,
+            log.Engineer,
+            Timestamp = log.Timestamp.ToString("o")
+        }, cancellationToken: ct));
+    }
+
+    public override async Task<IReadOnlyList<ItemAuditLog>> GetAuditLogsForItemAsync(string itemId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(itemId);
+        await InitializeDatabaseAsync(ct);
+
+        const string sql = "SELECT * FROM ItemAuditTrail WHERE ItemId = @ItemId ORDER BY Timestamp DESC;";
+
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(ct);
+        var rows = await connection.QueryAsync(new CommandDefinition(sql, new { ItemId = itemId }, cancellationToken: ct));
+
+        var list = new List<ItemAuditLog>();
+        foreach (var r in rows)
+        {
+            list.Add(new ItemAuditLog
+            {
+                AuditId = (long)r.AuditId,
+                ItemId = r.ItemId,
+                BillNumber = r.BillNumber,
+                ItemCode = r.ItemCode,
+                Description = r.Description,
+                OldRate = r.OldRate != null ? (decimal)r.OldRate : null,
+                NewRate = r.NewRate != null ? (decimal)r.NewRate : null,
+                Action = r.Action,
+                Reason = r.Reason,
+                Engineer = r.Engineer,
+                Timestamp = DateTime.TryParse((string)r.Timestamp, out DateTime dt) ? dt : DateTime.UtcNow
+            });
+        }
+        return list;
+    }
+
+    #endregion
 }
