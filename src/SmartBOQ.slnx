@@ -4,4 +4,5 @@
   <Project Path="SmartBOQ.CLI/SmartBOQ.CLI.csproj" />
   <Project Path="SmartBOQ.Domain/SmartBOQ.Domain.csproj" />
   <Project Path="SmartBOQ.Infrastructure/SmartBOQ.Infrastructure.csproj" />
+  <Project Path="../tests/SmartBOQ.Tests/SmartBOQ.Tests.csproj" />
 </Solution>

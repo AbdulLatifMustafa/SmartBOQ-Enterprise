@@ -22,12 +22,40 @@ public abstract class BaseBoqReader : IBoqReader
 
     public virtual Task<IReadOnlyList<BoqItem>> ReadContractorFlatBoqAsync(string filePath, CancellationToken ct = default)
     {
+        return ReadContractorFlatBoqAsync(filePath, null, ct);
+    }
+
+    public virtual Task<IReadOnlyList<BoqItem>> ReadContractorFlatBoqAsync(string filePath, ColumnMappingModel? columnMappings, CancellationToken ct = default)
+    {
         throw new NotSupportedException($"{GetType().Name} does not support reading contractor flat BOQ files.");
     }
 
     public virtual Task<IReadOnlyList<BoqSheet>> ReadConsultantHierarchicalBoqAsync(string filePath, CancellationToken ct = default)
     {
         throw new NotSupportedException($"{GetType().Name} does not support reading consultant hierarchical BOQ files.");
+    }
+
+    private static readonly string[] SharedNonBillPrefixes =
+    [
+        "TABLE OF CONTENTS", "PREAMBLE", "SCHEDULE OF INSURANCE", "INSTRUCTION",
+        "GRAND SUMMARY", "COVER", "DAYWORKS", "PRICE ANALYSIS", "AUDIT", "DASHBOARD",
+        "EXECUTIVE", "PRICING_LINKAGE", "LINKAGE", "فهرس", "غلاف", "ملخص"
+    ];
+
+    /// <summary>
+    /// Checks whether an Excel worksheet is an administrative/summary sheet rather than a pricing bill.
+    /// </summary>
+    protected static bool IsNonBillSheet(string sheetName)
+    {
+        if (string.IsNullOrWhiteSpace(sheetName)) return true;
+        string trimmed = sheetName.Trim();
+        foreach (var p in SharedNonBillPrefixes)
+        {
+            if (trimmed.StartsWith(p, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return trimmed.Contains("Summary", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("Preamble", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("ملخص", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -77,12 +105,13 @@ public abstract class BaseBoqReader : IBoqReader
         string u = unit.Trim().ToLowerInvariant();
         string normalized = u switch
         {
-            "m2" or "sqm" or "sq.m" or "m²" => "m2",
-            "m3" or "cum" or "cu.m" or "m³" => "m3",
-            "lm" or "m" or "lin.m" or "mtr" => "m",
-            "nr" or "no" or "nos" or "item" => "item",
-            "ton" or "tonne" or "tons" => "ton",
-            "kg" or "kgs" => "kg",
+            "m2" or "sqm" or "sq.m" or "m²" or "م2" or "م²" or "متر مربع" or "متر2" => "m2",
+            "m3" or "cum" or "cu.m" or "m³" or "م3" or "م³" or "متر مكعب" or "متر3" => "m3",
+            "lm" or "m" or "lin.m" or "mtr" or "م.ط" or "متر طولي" or "متر" => "m",
+            "nr" or "no" or "nos" or "item" or "عدد" or "بند" or "حبة" or "قطعة" => "item",
+            "ton" or "tonne" or "tons" or "طن" => "ton",
+            "kg" or "kgs" or "كجم" or "كيلو" or "كيلوجرام" => "kg",
+            "ls" or "sum" or "مقطوعية" or "جملة" or "مقطوع" => "sum",
             _ => u
         };
         return CompactStringPool.Shared.GetOrAdd(normalized);
@@ -105,6 +134,17 @@ public abstract class BaseBoqReader : IBoqReader
         for (int i = 0; i < len; i++)
         {
             char c = text[i];
+
+            // Arabic Diacritics / Tatweel stripping
+            if (c >= '\u064B' && c <= '\u065F') continue; // Fatha, Damma, Kasra, Shadda, Sukun, Tanween
+            if (c == '\u0640') continue; // Tatweel / Kashida
+            if (c == '\u0670') continue; // Superscript Alef
+
+            // Arabic Letter Normalization
+            if (c == 'أ' || c == 'إ' || c == 'آ' || c == 'ٱ') c = 'ا';
+            else if (c == 'ة') c = 'ه';
+            else if (c == 'ى') c = 'ي';
+
             if (char.IsLetterOrDigit(c))
             {
                 buffer[outIdx++] = char.ToLowerInvariant(c);

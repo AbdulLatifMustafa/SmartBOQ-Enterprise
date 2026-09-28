@@ -1,3 +1,4 @@
+using SmartBOQ.Domain.Enums;
 using SmartBOQ.Domain.Models;
 
 namespace SmartBOQ.Domain.Interfaces;
@@ -13,6 +14,12 @@ public interface IBoqReader
     Task<IReadOnlyList<BoqItem>> ReadContractorFlatBoqAsync(string filePath, CancellationToken ct = default);
 
     /// <summary>
+    /// Reads contractor flat tabular database applying specific routed column channels.
+    /// </summary>
+    Task<IReadOnlyList<BoqItem>> ReadContractorFlatBoqAsync(string filePath, ColumnMappingModel? columnMappings, CancellationToken ct = default)
+        => ReadContractorFlatBoqAsync(filePath, ct);
+
+    /// <summary>
     /// Reads consultant hierarchical multi-sheet workbook and reconstructs multi-row items via FSM.
     /// </summary>
     Task<IReadOnlyList<BoqSheet>> ReadConsultantHierarchicalBoqAsync(string filePath, CancellationToken ct = default);
@@ -25,6 +32,17 @@ public interface IVerificationGate
 {
     Task<VerificationReport> VerifyFilesAsync(string fileAPath, string fileBPath, CancellationToken ct = default);
 }
+
+/// <summary>
+/// Fast zero-allocation workbook structure inspector and table linker contract.
+/// </summary>
+public interface IBoqInspector
+{
+    Task<BoqFileInfo> InspectWorkbookAsync(string filePath, BoqFileRole role = BoqFileRole.ContractorPriced, CancellationToken ct = default);
+    Task<IReadOnlyList<SheetLinkMapping>> AutoLinkSheetsAsync(IReadOnlyList<BoqSheetSummary> targetSheets, IReadOnlyList<BoqSheetSummary> sourceSheets, CancellationToken ct = default);
+    Task<ColumnMappingModel> DetectColumnMappingAsync(string sourceFilePath, string targetFilePath, CancellationToken ct = default);
+}
+
 
 /// <summary>
 /// SIMD-accelerated hybrid weighted item matching engine contract.
@@ -77,6 +95,7 @@ public interface ISqliteRepository
     Task SaveSnapshotAsync(ProjectSnapshot snapshot, IReadOnlyList<BoqItem> items, CancellationToken ct = default);
     Task<IReadOnlyList<ProjectSnapshot>> GetSnapshotsAsync(string projectCode, CancellationToken ct = default);
     Task<IReadOnlyList<BoqItem>> FindHistoricalRatesAsync(string normalizedDescription, string unit, CancellationToken ct = default);
+    Task<IReadOnlyList<HistoricalRateItem>> SearchHistoricalRatesAsync(string? searchTerm = null, int limit = 200, CancellationToken ct = default);
 }
 
 /// <summary>

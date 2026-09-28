@@ -28,6 +28,13 @@ smartboq_history.db
 *.csv
 New folder/
 output/
+output_verified/
+test_accuracy_suite/
+test_inspect/
+test_out/
+test_output/
+probe/
+file/
 
 ## IDE, Editor & OS Specific Files
 .vs/

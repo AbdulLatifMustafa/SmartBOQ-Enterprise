@@ -138,8 +138,11 @@ public sealed class PreFlightVerificationGate : IVerificationGate
                     {
                         billSheets.Add(sheetName);
 
-                        if (sheetName.Contains("Provisional", StringComparison.OrdinalIgnoreCase) || 
-                            sheetName.EndsWith("PS", StringComparison.OrdinalIgnoreCase))
+                        if (sheetName.Equals("Bill 6 Provisional Sum", StringComparison.OrdinalIgnoreCase) ||
+                            sheetName.StartsWith("Bill 6 Provisional", StringComparison.OrdinalIgnoreCase) ||
+                            sheetName.Contains("Provisional Sum", StringComparison.OrdinalIgnoreCase) || 
+                            sheetName.Contains("مبلغ احتياطي", StringComparison.OrdinalIgnoreCase) ||
+                            sheetName.Contains("مبالغ احتياطية", StringComparison.OrdinalIgnoreCase))
                         {
                             psSheets.Add(sheetName);
                         }

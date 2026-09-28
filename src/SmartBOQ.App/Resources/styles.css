@@ -1,0 +1,98 @@
+/* ========================================================================= */
+/* SmartBOQ Enterprise - Windows 11 Dark Mode UI & Simple Motions (CSS)      */
+/* ========================================================================= */
+
+:root {
+  /* Crisp High-Contrast Eye-Comfort Dark Mode Palette (Pure Non-Glare Off-White, Refined Accents) */
+  --bg-dark: #121316;         /* Deep matte dark background */
+  --bg-card: #1A1C23;         /* Card surface */
+  --bg-card-hover: #232631;   /* Hover surface */
+  --bg-input: #15171D;        /* Input background */
+  --border-color: #2D323E;    /* Subtle crisp border */
+  
+  /* Primary & Accent Tones */
+  --color-primary: #384863;       /* Refined Slate Steel */
+  --color-primary-hover: #475A7B; /* Hover */
+  --color-success: #34D399;       /* Soft Mint Emerald */
+  --color-warning: #F59E0B;       /* Warm Amber */
+  --color-danger: #EF4444;        /* Soft Crimson */
+  --color-info: #38BDF8;          /* Sky Slate */
+
+  /* Crisp Typography */
+  --text-primary: #F1F3F7;    /* Crisp Off-White */
+  --text-secondary: #9EA5B4;  /* Clean Silver Slate */
+  --text-muted: #747C8C;      /* Captions */
+}
+
+/* ========================================================================= */
+/* Simple Motion & Transitions (الحركات البسيطة)                             */
+/* ========================================================================= */
+
+/* Smooth Fade-in Transition for Views & Tabs */
+.view-fade-in {
+  opacity: 0.85;
+  transform: translateY(4px);
+  transition: opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.view-fade-in.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Card Hover Elevation */
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  transition: background-color 0.15s ease,
+              border-color 0.15s ease,
+              transform 0.15s ease;
+}
+
+.card:hover {
+  background-color: var(--bg-card-hover);
+  border-color: #484848;
+  transform: translateY(-1.5px);
+}
+
+/* Smooth Button Hover Motion */
+.btn {
+  background-color: var(--color-primary);
+  color: var(--text-primary);
+  border-radius: 6px;
+  transition: background-color 0.12s ease,
+              transform 0.12s ease;
+}
+
+.btn:hover {
+  background-color: var(--color-primary-hover);
+  transform: scale(1.015);
+}
+
+/* Windows 11 Smooth Floating SliderBar / ScrollBar */
+.menu-sliderbar {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
+}
+
+.menu-sliderbar::-webkit-scrollbar {
+  height: 5px;
+}
+
+.menu-sliderbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.menu-sliderbar::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  transition: background-color 0.15s ease;
+}
+
+.menu-sliderbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.65);
+}

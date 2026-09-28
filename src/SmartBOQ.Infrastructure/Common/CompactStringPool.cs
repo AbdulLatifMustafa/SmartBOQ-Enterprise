@@ -18,10 +18,13 @@ public sealed class CompactStringPool
         // Pre-seed common civil engineering tokens to prevent initial contention
         string[] commonTokens =
         [
-            "EGP", "USD", "EUR", "GBP",
+            "EGP", "USD", "EUR", "GBP", "SAR", "AED", "QAR", "KWD",
             "m2", "m3", "m", "item", "ton", "kg", "nr", "sum", "ls", "lin.m",
+            "م2", "م3", "م.ط", "متر", "عدد", "بند", "طن", "كجم", "مقطوعية", "حبة", "قطعة",
             "Rate only", "Provisional Sum", "Variation Order",
-            "Bill", "Section", "Preliminaries", "Earthworks", "Concrete", "Finishes"
+            "سعر فقط", "مبلغ احتياطي", "أمر تغيير",
+            "Bill", "Section", "Preliminaries", "Earthworks", "Concrete", "Finishes",
+            "الباب", "القسم", "أعمال", "حفر", "ردم", "خرسانة", "حديد", "عزل", "مباني", "بياض", "دهانات"
         ];
 
         foreach (var token in commonTokens)

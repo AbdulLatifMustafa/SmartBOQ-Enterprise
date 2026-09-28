@@ -9,10 +9,9 @@
         <StackPanel MaxWidth="1400" HorizontalAlignment="Stretch">
 
             <!-- TOP RESPONSIVE KPI CARDS (UniformGrid adaptively fills width) -->
-            <!-- TOP RESPONSIVE KPI CARDS (Unified Professional Corporate Blue & Slate) -->
-            <UniformGrid Columns="4" Margin="0,0,0,22">
+            <UniformGrid Columns="4" Margin="-6,0,-6,22">
                 <!-- Total Scanned Items -->
-                <Border Style="{StaticResource ModernCard}" Margin="0,0,12,0">
+                <Border Style="{StaticResource ModernCard}" Margin="6">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -30,7 +29,7 @@
                 </Border>
 
                 <!-- Exact Matches -->
-                <Border Style="{StaticResource ModernCard}" Margin="6,0,6,0">
+                <Border Style="{StaticResource ModernCard}" Margin="6">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -38,17 +37,17 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
                             <TextBlock Text="تطابق قطعي (100%)" FontSize="13.5" Foreground="{DynamicResource BrushTextSecondary}"/>
-                            <TextBlock Text="{Binding ExactMatchesCount, StringFormat={}{0:N0}}" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource BrushPrimary}" Margin="0,4,0,0"/>
+                            <TextBlock Text="{Binding ExactMatchesCount, StringFormat={}{0:N0}}" FontSize="28" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,4,0,0"/>
                             <TextBlock Text="مطابقة دقيقة بالاسم والوحدة" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3,0,0"/>
                         </StackPanel>
                         <Border Grid.Column="1" Background="{DynamicResource BrushBgCardHover}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Width="48" Height="48">
-                            <iconPacks:PackIconLucide Kind="CheckCheck" Width="22" Height="22" Foreground="{DynamicResource BrushPrimary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <iconPacks:PackIconLucide Kind="CheckCheck" Width="22" Height="22" Foreground="{DynamicResource BrushSuccess}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                     </Grid>
                 </Border>
 
                 <!-- Variation Orders -->
-                <Border Style="{StaticResource ModernCard}" Margin="6,0,6,0">
+                <Border Style="{StaticResource ModernCard}" Margin="6">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -60,13 +59,13 @@
                             <TextBlock Text="تتطلب دراسة تسعير جديدة" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3,0,0"/>
                         </StackPanel>
                         <Border Grid.Column="1" Background="{DynamicResource BrushBgCardHover}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Width="48" Height="48">
-                            <iconPacks:PackIconLucide Kind="FilePlus" Width="22" Height="22" Foreground="{DynamicResource BrushPrimary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <iconPacks:PackIconLucide Kind="FilePlus" Width="22" Height="22" Foreground="{DynamicResource BrushWarning}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                     </Grid>
                 </Border>
 
                 <!-- Provisional Sums Shielded -->
-                <Border Style="{StaticResource ModernCard}" Margin="12,0,0,0">
+                <Border Style="{StaticResource ModernCard}" Margin="6">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -148,14 +147,14 @@
                 <StackPanel>
                     <Grid Margin="0,0,0,14">
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <iconPacks:PackIconLucide Kind="CheckCheck" Width="20" Height="20" Foreground="{DynamicResource BrushPrimary}" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="بوابة التحقق المسبق (Pre-Flight Verification Gate)" FontWeight="Bold" FontSize="16" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                            <iconPacks:PackIconLucide Kind="CheckCheck" Width="18" Height="18" Foreground="{DynamicResource BrushPrimary}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="التحقق المسبق وسلامة البيانات" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
                         </StackPanel>
-                        <TextBlock Text="{Binding VerificationSummaryText}" HorizontalAlignment="Right" FontWeight="Bold" FontSize="14" Foreground="{DynamicResource BrushPrimary}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding VerificationSummaryText}" HorizontalAlignment="Right" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource BrushPrimary}" VerticalAlignment="Center"/>
                     </Grid>
 
-                    <TextBlock Text="يتحقق النظام مسبقاً من سلامة أعمدة المناقصة الثمانية الإلزامية وهيكل الـ 26 شيت وعزل شيتات المبالغ الاحتياطية قبل السماح بالمطابقة وحقن الأسعار." 
-                               TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" FontSize="13" Margin="0,0,0,14"/>
+                    <TextBlock Text="فحص سلامة أعمدة المقايسة وهيكل الشيتات وعزل المبالغ الاحتياطية قبل بدء المطابقة وحقن الأسعار." 
+                               TextWrapping="Wrap" Foreground="{DynamicResource BrushTextSecondary}" FontSize="12.5" Margin="0,0,0,14"/>
 
                     <ItemsControl ItemsSource="{Binding VerificationReport.PassedChecks}">
                         <ItemsControl.ItemTemplate>

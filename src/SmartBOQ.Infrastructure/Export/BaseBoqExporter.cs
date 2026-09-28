@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using System.Xml.Linq;
@@ -40,8 +41,13 @@ public abstract class BaseBoqExporter : IBoqExporter
     /// </summary>
     protected static void SanitizeOpenXmlPackage(string zipFilePath)
     {
+        var prevCulture = Thread.CurrentThread.CurrentCulture;
+        var prevUiCulture = Thread.CurrentThread.CurrentUICulture;
         try
         {
+            Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
+            Thread.CurrentThread.CurrentUICulture = CultureInfo.InvariantCulture;
+
             using var archive = ZipFile.Open(zipFilePath, ZipArchiveMode.Update);
 
             var entryNames = new HashSet<string>(
@@ -239,6 +245,11 @@ public abstract class BaseBoqExporter : IBoqExporter
         catch
         {
             // Fallback gracefully if in-place archive healing encounters filesystem locks
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = prevCulture;
+            Thread.CurrentThread.CurrentUICulture = prevUiCulture;
         }
     }
 }

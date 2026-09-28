@@ -56,77 +56,90 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
         await Task.Run(() =>
         {
-            // Step 1: Copy original template to output path to preserve 100% of formatting, hierarchy, and design
-            if (!string.Equals(Path.GetFullPath(templateFilePath), Path.GetFullPath(outputFilePath), StringComparison.OrdinalIgnoreCase))
+            var prevCulture = Thread.CurrentThread.CurrentCulture;
+            var prevUiCulture = Thread.CurrentThread.CurrentUICulture;
+            try
             {
-                File.Copy(templateFilePath, outputFilePath, overwrite: true);
-            }
+                Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
+                Thread.CurrentThread.CurrentUICulture = CultureInfo.InvariantCulture;
 
-            // Step 2: Sanitize package metadata and relationships using base class engine
-            SanitizeOpenXmlPackage(outputFilePath);
-
-            using var workbook = new XLWorkbook(outputFilePath);
-
-            // Step 3: Inject rates into target bill sheets - ZERO design or formatting modifications to original sheets
-            var sheetGroups = matchedPairs.GroupBy(p => p.TargetItem.BillNumber).ToList();
-            int totalSheets = sheetGroups.Count;
-            int processedSheets = 0;
-
-            foreach (var group in sheetGroups)
-            {
-                ct.ThrowIfCancellationRequested();
-                string sheetName = group.Key;
-
-                if (!workbook.TryGetWorksheet(sheetName, out var ws))
+                // Step 1: Copy original template to output path to preserve 100% of formatting, hierarchy, and design
+                if (!string.Equals(Path.GetFullPath(templateFilePath), Path.GetFullPath(outputFilePath), StringComparison.OrdinalIgnoreCase))
                 {
-                    continue;
+                    File.Copy(templateFilePath, outputFilePath, overwrite: true);
                 }
 
-                foreach (var pair in group)
+                // Step 2: Sanitize package metadata and relationships using base class engine
+                SanitizeOpenXmlPackage(outputFilePath);
+
+                using var workbook = new XLWorkbook(outputFilePath);
+
+                // Step 3: Inject rates into target bill sheets - ZERO design or formatting modifications to original sheets
+                var sheetGroups = matchedPairs.GroupBy(p => p.TargetItem.BillNumber).ToList();
+                int totalSheets = sheetGroups.Count;
+                int processedSheets = 0;
+
+                foreach (var group in sheetGroups)
                 {
-                    if (pair.TargetItem.IsProtected || pair.TargetItem.Type == BoqItemType.ProvisionalSum)
+                    ct.ThrowIfCancellationRequested();
+                    string sheetName = group.Key;
+
+                    if (!workbook.TryGetWorksheet(sheetName, out var ws))
                     {
                         continue;
                     }
 
-                    int anchorRow = pair.TargetItem.AnchorRowIndex;
-                    if (anchorRow <= 0) continue;
-
-                    int rateCol = pair.TargetItem.RateColumnIndex > 0 ? pair.TargetItem.RateColumnIndex : 7;
-                    var rateCell = ws.Cell(anchorRow, rateCol);
-
-                    if (pair.IsApproved && pair.InjectedRate.HasValue)
+                    foreach (var pair in group)
                     {
-                        // ONLY set the numeric value into Column G - preserve 100% of original cell fonts, borders, and fills
-                        rateCell.Value = (double)pair.InjectedRate.Value;
+                        if (pair.TargetItem.IsProtected || pair.TargetItem.Type == BoqItemType.ProvisionalSum)
+                        {
+                            continue;
+                        }
+
+                        int anchorRow = pair.TargetItem.AnchorRowIndex;
+                        if (anchorRow <= 0) continue;
+
+                        int rateCol = pair.TargetItem.RateColumnIndex > 0 ? pair.TargetItem.RateColumnIndex : 7;
+                        var rateCell = ws.Cell(anchorRow, rateCol);
+
+                        if (pair.IsApproved && pair.InjectedRate.HasValue)
+                        {
+                            // ONLY set the numeric value into Column G - preserve 100% of original cell fonts, borders, and fills
+                            rateCell.Value = (double)pair.InjectedRate.Value;
+                        }
+                        else
+                        {
+                            // Unpriced / Unmatched item: ensure rate cell is cleared of any stale residual values
+                            rateCell.Clear(XLClearOptions.Contents);
+                        }
                     }
-                    else
-                    {
-                        // Unpriced / Unmatched item: ensure rate cell is cleared of any stale residual values
-                        rateCell.Clear(XLClearOptions.Contents);
-                    }
+
+                    processedSheets++;
                 }
 
-                processedSheets++;
+                // Step 4: Append / Update interactive Audit_Report and Pricing_Linkage_Map worksheets
+                CreateAuditLogWorksheet(workbook, matchedPairs, sourceContractorFilePath);
+                CreatePricingLinkageMapWorksheet(workbook, matchedPairs, sourceContractorFilePath);
+
+                // Step 5: Save populated workbook - 100% original sheets, tabs, colors, and design preserved
+                workbook.Save();
+
+                // Step 6: Inject relative dynamic links if source contractor file is provided
+                if (enableDynamicLinking && !string.IsNullOrWhiteSpace(sourceContractorFilePath))
+                {
+                    InjectRelativeDynamicLinks(outputFilePath, sourceContractorFilePath, matchedPairs);
+                }
+
+                // Step 7: Post-save OpenXML Archive Sanitization to guarantee 0 repair warnings
+                SanitizeOpenXmlPackage(outputFilePath);
+
+                progress?.Report(100);
             }
-
-            // Step 4: Append / Update interactive Audit_Report and Pricing_Linkage_Map worksheets
-            CreateAuditLogWorksheet(workbook, matchedPairs, sourceContractorFilePath);
-            CreatePricingLinkageMapWorksheet(workbook, matchedPairs, sourceContractorFilePath);
-
-            // Step 5: Save populated workbook - 100% original sheets, tabs, colors, and design preserved
-            workbook.Save();
-
-            // Step 6: Inject relative dynamic links if source contractor file is provided
-            if (enableDynamicLinking && !string.IsNullOrWhiteSpace(sourceContractorFilePath))
+            finally
             {
-                InjectRelativeDynamicLinks(outputFilePath, sourceContractorFilePath, matchedPairs);
+                Thread.CurrentThread.CurrentCulture = prevCulture;
+                Thread.CurrentThread.CurrentUICulture = prevUiCulture;
             }
-
-            // Step 7: Post-save OpenXML Archive Sanitization to guarantee 0 repair warnings
-            SanitizeOpenXmlPackage(outputFilePath);
-
-            progress?.Report(100);
         }, ct);
     }
 
@@ -139,11 +152,24 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         IReadOnlyList<BoqMatchedPair> matchedPairs,
         string? sourceContractorFilePath = null)
     {
-        using var workbook = new XLWorkbook();
-        ExcelDashboardBuilder.BuildDashboard(workbook, matchedPairs);
-        CreateAuditLogWorksheet(workbook, matchedPairs, sourceContractorFilePath);
-        CreatePricingLinkageMapWorksheet(workbook, matchedPairs, sourceContractorFilePath);
-        workbook.SaveAs(outputPath);
+        var prevCulture = Thread.CurrentThread.CurrentCulture;
+        var prevUiCulture = Thread.CurrentThread.CurrentUICulture;
+        try
+        {
+            Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
+            Thread.CurrentThread.CurrentUICulture = CultureInfo.InvariantCulture;
+
+            using var workbook = new XLWorkbook();
+            ExcelDashboardBuilder.BuildDashboard(workbook, matchedPairs);
+            CreateAuditLogWorksheet(workbook, matchedPairs, sourceContractorFilePath);
+            CreatePricingLinkageMapWorksheet(workbook, matchedPairs, sourceContractorFilePath);
+            workbook.SaveAs(outputPath);
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = prevCulture;
+            Thread.CurrentThread.CurrentUICulture = prevUiCulture;
+        }
     }
 
     /// <summary>
@@ -157,7 +183,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
     {
         string contractorFileName = !string.IsNullOrWhiteSpace(sourceContractorFilePath)
             ? Path.GetFileName(sourceContractorFilePath)
-            : "DP3 - Hatchway.xlsx";
+            : "Contractor_Priced_BOQ.xlsx";
 
         const string auditSheetName = "Audit_Report";
         if (workbook.TryGetWorksheet(auditSheetName, out var existingWs))
@@ -252,10 +278,15 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             .ThenBy(p => p.TargetItem.AnchorRowIndex)
             .ToList();
 
+        // Excel worksheet hard limit is 1,048,576 rows. Enforce safe cap to prevent worksheet corruption.
+        const int maxExcelSheetRows = 1_048_500;
+        int maxExportRows = Math.Min(sortedPairs.Count, maxExcelSheetRows - headerRow - 5);
+        var exportPairs = sortedPairs.Take(maxExportRows);
+
         // Table Rows
         bool separatorAdded = false;
         int rowIdx = headerRow + 1;
-        foreach (var pair in sortedPairs)
+        foreach (var pair in exportPairs)
         {
             var item = pair.TargetItem;
             var srcItem = pair.MatchedSourceItem;
@@ -294,32 +325,32 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             int rateCol = item.RateColumnIndex > 0 ? item.RateColumnIndex : 7;
             string rateColLetter = XLHelper.GetColumnLetterFromNumber(rateCol);
             string safeSheet = item.BillNumber.Replace("'", "''");
-            string targetCellRef = $"'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex}";
+            string targetCellRef = $"'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
 
-            // Col 1: Direct Interactive Quick-Jump to Tender Schedule (Zero Emojis)
+            // Col 1: Direct Interactive Quick-Jump to Tender Schedule (Zero Emojis, English Digits)
             var jumpCell = ws.Cell(rowIdx, 1);
             if (isPriced)
             {
-                jumpCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex} ] المقايسة\")";
+                jumpCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] المقايسة\")";
                 jumpCell.Style.Font.Bold = true;
                 jumpCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 jumpCell.Style.Font.FontColor = XLColor.FromHtml("#2563EB"); // Royal blue
             }
             else if (isPs)
             {
-                jumpCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ صف {item.AnchorRowIndex} ] محمي\")";
+                jumpCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] محمي\")";
                 jumpCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 jumpCell.Style.Font.FontColor = XLColor.FromHtml("#B45309"); // Amber
             }
             else
             {
-                jumpCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ صف {item.AnchorRowIndex} ] معاينة\")";
+                jumpCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] معاينة\")";
                 jumpCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 jumpCell.Style.Font.FontColor = XLColor.FromHtml("#64748B");
             }
             jumpCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-            // Col 2: Direct Interactive Quick-Jump to Contractor Master Rates File & Table Record (Zero Emojis)
+            // Col 2: Direct Interactive Quick-Jump to Contractor Master Rates File & Table Record (Zero Emojis, English Digits)
             var srcJumpCell = ws.Cell(rowIdx, 2);
             if (srcItem != null && srcItem.AnchorRowIndex > 0)
             {
@@ -335,9 +366,9 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 string tblEndLetter = XLHelper.GetColumnLetterFromNumber(tblEnd);
 
                 // Accurate direct jump to the exact Net Rate cell in the contractor file
-                string cellCoord = $"{srcColLetter}{srcRow}";
+                string cellCoord = $"{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}";
                 string srcRef = $"{contractorFileName}#{safeSrcSheet}!{cellCoord}";
-                srcJumpCell.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"[ {srcColLetter}{srcRow} ] عرض سعر المقاول\")";
+                srcJumpCell.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"[ {srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)} ] عرض سعر المقاول\")";
                 srcJumpCell.Style.Font.Bold = true;
                 srcJumpCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 srcJumpCell.Style.Font.FontColor = XLColor.FromHtml("#16A34A"); // Emerald green
@@ -358,7 +389,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
             // Col 4: Row (Also Clickable)
             var rowCell = ws.Cell(rowIdx, 4);
-            rowCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{item.AnchorRowIndex}\")";
+            rowCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}\")";
             rowCell.Style.Font.Bold = isPriced;
             rowCell.Style.Font.Underline = XLFontUnderlineValues.Single;
             rowCell.Style.Font.FontColor = isPriced ? XLColor.FromHtml("#2563EB") : XLColor.FromHtml("#64748B");
@@ -377,7 +408,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             ws.Cell(rowIdx, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             // Col 8: Source Row
-            ws.Cell(rowIdx, 8).Value = srcItem != null && srcItem.AnchorRowIndex > 0 ? srcItem.AnchorRowIndex.ToString() : "-";
+            ws.Cell(rowIdx, 8).Value = srcItem != null && srcItem.AnchorRowIndex > 0 ? srcItem.AnchorRowIndex.ToString(CultureInfo.InvariantCulture) : "-";
             ws.Cell(rowIdx, 8).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             // Col 9: Unit
@@ -390,7 +421,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             {
                 int qtyCol = item.QuantityColumnIndex > 0 ? item.QuantityColumnIndex : 5;
                 string qtyColLetter = XLHelper.GetColumnLetterFromNumber(qtyCol);
-                qtyCell.FormulaA1 = $"='{safeSheet}'!{qtyColLetter}{item.AnchorRowIndex}";
+                qtyCell.FormulaA1 = $"='{safeSheet}'!{qtyColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
             }
             else
             {
@@ -407,7 +438,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             var rateCell = ws.Cell(rowIdx, 12);
             if (isPriced && item.AnchorRowIndex > 0)
             {
-                rateCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", '{safeSheet}'!{rateColLetter}{item.AnchorRowIndex})";
+                rateCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", '{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)})";
                 rateCell.Style.Font.Bold = true;
                 rateCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 rateCell.Style.Font.FontColor = XLColor.FromHtml("#15803D"); // Emerald green
@@ -426,7 +457,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             {
                 int amtCol = item.AmountColumnIndex > 0 ? item.AmountColumnIndex : 8;
                 string amtColLetter = XLHelper.GetColumnLetterFromNumber(amtCol);
-                amtCell.FormulaA1 = $"='{safeSheet}'!{amtColLetter}{item.AnchorRowIndex}";
+                amtCell.FormulaA1 = $"='{safeSheet}'!{amtColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
             }
             else if (amount.HasValue)
             {
@@ -434,6 +465,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             }
             amtCell.Style.NumberFormat.Format = "#,##0.00";
             amtCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
+
 
             // Col 14: Confidence
             ws.Cell(rowIdx, 14).Value = pair.Confidence.ToString();
@@ -501,7 +533,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
     {
         string contractorFileName = !string.IsNullOrWhiteSpace(sourceContractorFilePath)
             ? Path.GetFileName(sourceContractorFilePath)
-            : "DP3 - Hatchway.xlsx";
+            : "Contractor_Priced_BOQ.xlsx";
 
         const string linkageSheetName = "Pricing_Linkage_Map";
         if (workbook.TryGetWorksheet(linkageSheetName, out var existingWs))
@@ -593,8 +625,13 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             .ThenBy(p => p.TargetItem.AnchorRowIndex)
             .ToList();
 
+        // Excel worksheet hard limit is 1,048,576 rows. Enforce safe cap to prevent worksheet corruption.
+        const int maxExcelSheetRows = 1_048_500;
+        int maxExportRows = Math.Min(sortedPairs.Count, maxExcelSheetRows - headerRow - 5);
+        var exportPairs = sortedPairs.Take(maxExportRows);
+
         int rowIdx = headerRow + 1;
-        foreach (var pair in sortedPairs)
+        foreach (var pair in exportPairs)
         {
             var item = pair.TargetItem;
             var srcItem = pair.MatchedSourceItem;
@@ -607,13 +644,13 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             int rateCol = item.RateColumnIndex > 0 ? item.RateColumnIndex : 7;
             string rateColLetter = XLHelper.GetColumnLetterFromNumber(rateCol);
             string safeSheet = item.BillNumber.Replace("'", "''");
-            string targetCellRef = $"'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex}";
+            string targetCellRef = $"'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
 
-            // Col 1: Jump to Tender Schedule
+            // Col 1: Jump to Tender Schedule (English Digits)
             var tenderJump = ws.Cell(rowIdx, 1);
             if (item.AnchorRowIndex > 0)
             {
-                tenderJump.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex} ] المقايسة\")";
+                tenderJump.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] المقايسة\")";
                 tenderJump.Style.Font.Bold = true;
                 tenderJump.Style.Font.Underline = XLFontUnderlineValues.Single;
                 tenderJump.Style.Font.FontColor = XLColor.FromHtml("#2563EB"); // Royal blue
@@ -624,7 +661,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             }
             tenderJump.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-            // Col 2: Open and focus on Contractor Rates Cell and Full Table Record
+            // Col 2: Open and focus on Contractor Rates Cell and Full Table Record (English Digits)
             var srcJump = ws.Cell(rowIdx, 2);
             if (isLinked)
             {
@@ -640,9 +677,9 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 string tblEndLetter = XLHelper.GetColumnLetterFromNumber(tblEnd);
 
                 // Smart Algorithm: Select entire table row record AND focus ActiveCell directly on Net Rate
-                string smartRange = $"{tblStartLetter}{srcRow}:{tblEndLetter}{srcRow},{srcColLetter}{srcRow}";
+                string smartRange = $"{tblStartLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}:{tblEndLetter}{srcRow.ToString(CultureInfo.InvariantCulture)},{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}";
                 string srcRef = $"{contractorFileName}#{safeSrcSheet}!{smartRange}";
-                srcJump.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"[ {srcColLetter}{srcRow} ] فتح وتحديد السعر والجدول\")";
+                srcJump.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"[ {srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)} ] فتح وتحديد السعر والجدول\")";
                 srcJump.Style.Font.Bold = true;
                 srcJump.Style.Font.Underline = XLFontUnderlineValues.Single;
                 srcJump.Style.Font.FontColor = XLColor.FromHtml("#16A34A"); // Emerald green
@@ -672,7 +709,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             var rowCell = ws.Cell(rowIdx, 4);
             if (item.AnchorRowIndex > 0)
             {
-                rowCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{item.AnchorRowIndex}\")";
+                rowCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}\")";
                 rowCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 rowCell.Style.Font.FontColor = XLColor.FromHtml("#2563EB");
             }
@@ -681,6 +718,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 rowCell.Value = "-";
             }
             rowCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
 
             // Col 5: Tender Code
             ws.Cell(rowIdx, 5).Value = item.ItemCode;
@@ -700,7 +738,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             {
                 int qtyCol = item.QuantityColumnIndex > 0 ? item.QuantityColumnIndex : 5;
                 string qtyColLetter = XLHelper.GetColumnLetterFromNumber(qtyCol);
-                mapQtyCell.FormulaA1 = $"='{safeSheet}'!{qtyColLetter}{item.AnchorRowIndex}";
+                mapQtyCell.FormulaA1 = $"='{safeSheet}'!{qtyColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
             }
             else
             {
@@ -718,7 +756,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             ws.Cell(rowIdx, 10).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             // Col 11: Contractor Row
-            ws.Cell(rowIdx, 11).Value = isLinked ? srcItem!.AnchorRowIndex.ToString() : "-";
+            ws.Cell(rowIdx, 11).Value = isLinked ? srcItem!.AnchorRowIndex.ToString(CultureInfo.InvariantCulture) : "-";
             ws.Cell(rowIdx, 11).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             // Col 12: Contractor Cell (Clickable link to contractor file cell & full table record!)
@@ -737,9 +775,9 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 string tblEndLetter = XLHelper.GetColumnLetterFromNumber(tblEnd);
 
                 // Smart Algorithm: Select entire table row record AND focus ActiveCell directly on Net Rate
-                string smartRange = $"{tblStartLetter}{srcRow}:{tblEndLetter}{srcRow},{srcColLetter}{srcRow}";
+                string smartRange = $"{tblStartLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}:{tblEndLetter}{srcRow.ToString(CultureInfo.InvariantCulture)},{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}";
                 string srcRef = $"{contractorFileName}#{safeSrcSheet}!{smartRange}";
-                cellRefCell.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"{srcColLetter}{srcRow}\")";
+                cellRefCell.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}\")";
                 cellRefCell.Style.Font.Bold = true;
                 cellRefCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 cellRefCell.Style.Font.FontColor = XLColor.FromHtml("#16A34A");
@@ -763,7 +801,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             var rateCell = ws.Cell(rowIdx, 15);
             if (item.AnchorRowIndex > 0 && rate.HasValue && rate > 0)
             {
-                rateCell.FormulaA1 = $"='{safeSheet}'!{rateColLetter}{item.AnchorRowIndex}";
+                rateCell.FormulaA1 = $"='{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
+
                 rateCell.Style.NumberFormat.Format = "#,##0.00";
                 rateCell.Style.Font.Bold = true;
                 rateCell.Style.Font.FontColor = XLColor.FromHtml("#15803D");
@@ -1083,15 +1122,11 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             }
         }
 
-        // Set updateLinks="always" so Excel automatically reads DP3 - Hatchway.xlsx silently on open
+        // Ensure fullCalcOnLoad="1" and forceFullCalculation="1" so all formulas recalculate on open without forcing external link blocking alerts
         var wbPr = wbDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "workbookPr");
-        if (wbPr != null)
+        if (wbPr != null && wbPr.Attribute("updateLinks")?.Value == "always")
         {
-            wbPr.SetAttributeValue("updateLinks", "always");
-        }
-        else
-        {
-            wbDoc.Root?.AddFirst(new XElement(wbNs + "workbookPr", new XAttribute("updateLinks", "always")));
+            wbPr.Attribute("updateLinks")?.Remove();
         }
 
         // Set fullCalcOnLoad="1" and forceFullCalculation="1" so all formulas recalculate on open

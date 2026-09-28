@@ -78,6 +78,10 @@ public static class SpanTokenizer
                     if (wordLength > 2) // Filter noise tokens
                     {
                         var wordSpan = text.Slice(wordStart, wordLength);
+                        if (wordSpan.Length >= 4 && (wordSpan[0] == 'ا' || wordSpan[0] == 'أ' || wordSpan[0] == 'إ') && wordSpan[1] == 'ل')
+                        {
+                            wordSpan = wordSpan.Slice(2);
+                        }
                         if (tokenCount < buffer.Length)
                         {
                             buffer[tokenCount++] = HashToken(wordSpan);
@@ -94,7 +98,12 @@ public static class SpanTokenizer
             int wordLength = text.Length - wordStart;
             if (wordLength > 2 && tokenCount < buffer.Length)
             {
-                buffer[tokenCount++] = HashToken(text.Slice(wordStart, wordLength));
+                var wordSpan = text.Slice(wordStart, wordLength);
+                if (wordSpan.Length >= 4 && (wordSpan[0] == 'ا' || wordSpan[0] == 'أ' || wordSpan[0] == 'إ') && wordSpan[1] == 'ل')
+                {
+                    wordSpan = wordSpan.Slice(2);
+                }
+                buffer[tokenCount++] = HashToken(wordSpan);
             }
         }
 

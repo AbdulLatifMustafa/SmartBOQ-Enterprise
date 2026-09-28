@@ -105,7 +105,7 @@ public sealed class LocalizationService : ILocalizationService
 
         target["Navigation.Summary"] = isArabic ? "ملخص المشروع" : "Project Summary";
         target["Navigation.Compare"] = isArabic ? "مقارنة الملفات" : "File Compare";
-        target["Navigation.PricingGrid"] = isArabic ? "جدول التسعير" : "Pricing Table";
+        target["Navigation.PricingGrid"] = isArabic ? "جدول المقايسة والأسعار" : "BOQ & Pricing Schedule";
         target["Navigation.Export"] = isArabic ? "تصدير الملف" : "Export File";
         target["Navigation.ProjectRates"] = isArabic ? "أسعار المشاريع" : "Project Rates";
         target["Navigation.CalculationMethod"] = isArabic ? "طريقة الحساب" : "Calculation Method";

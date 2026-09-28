@@ -82,6 +82,30 @@ public sealed record BoqMatchedPair
             MatchConfidence.ManualReviewNeeded => "مراجعة فنية",
             _ => IsVariationOrder ? "بند مستحدث (VO)" : "غير مطابق"
         };
+
+    /// <summary>
+    /// Indicates whether a valid matching contractor source item was found.
+    /// </summary>
+    public bool HasMatchedSource => MatchedSourceItem != null;
+
+    /// <summary>
+    /// Source table or bill partition name where the rate originated.
+    /// </summary>
+    public string SourceTableDisplay => IsProvisionalSum 
+        ? "محمي تلقائياً (PS)" 
+        : (MatchedSourceItem != null 
+            ? (!string.IsNullOrWhiteSpace(MatchedSourceItem.BillNumber) ? MatchedSourceItem.BillNumber : MatchedSourceItem.SheetName)
+            : (IsVariationOrder ? "بند مستحدث (VO)" : "-"));
+
+    /// <summary>
+    /// Source item code from the contractor BOQ.
+    /// </summary>
+    public string SourceItemCodeDisplay => MatchedSourceItem?.ItemCode ?? "-";
+
+    /// <summary>
+    /// 1-based row index in contractor Excel file where this item was found.
+    /// </summary>
+    public int SourceRowIndex => MatchedSourceItem?.AnchorRowIndex ?? 0;
 }
 
 /// <summary>
@@ -119,9 +143,40 @@ public sealed record ProjectSnapshot
     public long RevisionId { get; init; }
     public required string ProjectCode { get; init; }
     public required string RevisionCode { get; init; } // e.g. "Rev 0", "Rev 1", "Rev 2"
+    public string InvoiceName { get; init; } = string.Empty;
+    public string SourceFileName { get; init; } = string.Empty;
+    public string TargetFileName { get; init; } = string.Empty;
+    public string ExportFilePath { get; init; } = string.Empty;
     public DateTime SnapshotDate { get; init; } = DateTime.UtcNow;
     public decimal TotalValueEgp { get; init; }
     public decimal TotalValueUsd { get; init; }
     public int TotalItemsCount { get; init; }
     public string ContentHash { get; init; } = string.Empty;
 }
+
+/// <summary>
+/// Historical rate item retrieved from the local SQLite repository for price benchmarking and audit.
+/// </summary>
+public sealed record HistoricalRateItem
+{
+    public long RevisionId { get; init; }
+    public string InvoiceName { get; init; } = string.Empty;
+    public string ProjectCode { get; init; } = string.Empty;
+    public string SourceFileName { get; init; } = string.Empty;
+    public string TargetFileName { get; init; } = string.Empty;
+    public string ExportFilePath { get; init; } = string.Empty;
+    public DateTime SnapshotDate { get; init; }
+    public string FormattedDate => SnapshotDate.ToString("yyyy-MM-dd HH:mm");
+    public string BillNumber { get; init; } = string.Empty;
+    public string SectionName { get; init; } = string.Empty;
+    public string ItemCode { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public string Unit { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal? UnitRate { get; init; }
+    public decimal? TotalAmount { get; init; }
+    public string Currency { get; init; } = "EGP";
+    public string FormattedRate => UnitRate.HasValue ? $"{UnitRate.Value:N2} {Currency}" : "-";
+    public string FormattedAmount => TotalAmount.HasValue ? $"{TotalAmount.Value:N2} {Currency}" : "-";
+}
+

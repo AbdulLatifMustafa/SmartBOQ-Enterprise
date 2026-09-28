@@ -16,9 +16,22 @@ public abstract class BaseSqliteRepository : ISqliteRepository
     {
         if (string.IsNullOrWhiteSpace(databasePath))
         {
-            string appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SmartBOQ");
-            Directory.CreateDirectory(appData);
-            databasePath = Path.Combine(appData, "smartboq.db");
+            string exeDir = AppDomain.CurrentDomain.BaseDirectory;
+            databasePath = Path.Combine(exeDir, "smartboq.db");
+
+            // Automatic seamless migration: if old AppData database exists, copy it next to the .exe
+            string oldAppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SmartBOQ", "smartboq.db");
+            if (!File.Exists(databasePath) && File.Exists(oldAppData))
+            {
+                try
+                {
+                    File.Copy(oldAppData, databasePath, overwrite: false);
+                }
+                catch
+                {
+                    // Fallback to fresh db in exe directory
+                }
+            }
         }
         else
         {
@@ -64,4 +77,5 @@ public abstract class BaseSqliteRepository : ISqliteRepository
     public abstract Task SaveSnapshotAsync(ProjectSnapshot snapshot, IReadOnlyList<BoqItem> items, CancellationToken ct = default);
     public abstract Task<IReadOnlyList<ProjectSnapshot>> GetSnapshotsAsync(string projectCode, CancellationToken ct = default);
     public abstract Task<IReadOnlyList<BoqItem>> FindHistoricalRatesAsync(string normalizedDescription, string unit, CancellationToken ct = default);
+    public abstract Task<IReadOnlyList<HistoricalRateItem>> SearchHistoricalRatesAsync(string? searchTerm = null, int limit = 200, CancellationToken ct = default);
 }

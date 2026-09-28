@@ -37,6 +37,29 @@ public enum MatchConfidence
 }
 
 /// <summary>
+/// Architectural role of an ingested file.
+/// </summary>
+public enum BoqFileRole
+{
+    ContractorPriced = 0,
+    ConsultantTarget = 1,
+    SupplementaryRates = 2,
+    HistoricalBenchmark = 3
+}
+
+/// <summary>
+/// Status of worksheet-level linkage between consultant and contractor workbooks.
+/// </summary>
+public enum SheetLinkStatus
+{
+    AutoMatched = 0,
+    ManualMatched = 1,
+    ShieldedPS = 2,
+    GlobalSearch = 3,
+    Excluded = 4
+}
+
+/// <summary>
 /// Result status from the pre-flight schema and nomenclature integrity verification gate.
 /// </summary>
 public enum VerificationStatus
@@ -46,3 +69,4 @@ public enum VerificationStatus
     FailedInvalidSheets = 2,
     FailedCorrupted = 3
 }
+

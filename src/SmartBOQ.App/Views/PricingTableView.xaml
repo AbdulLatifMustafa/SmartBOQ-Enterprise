@@ -5,52 +5,91 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              mc:Ignorable="d">
-    <Grid Margin="24,16,24,20">
+    <Grid Margin="16,12,16,14">
         <Grid.RowDefinitions>
             <!-- Filter & Search Toolbar -->
             <RowDefinition Height="Auto"/>
             <!-- Responsive High-Contrast Virtualized DataGrid -->
             <RowDefinition Height="*"/>
+            <!-- Pagination Controls (100 Items Per Page) -->
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Filter Toolbar -->
-        <Grid Grid.Row="0" Margin="0,0,0,14">
+        <!-- Responsive Filter & Action Toolbar (Zero Scrollbars, Fully Responsive on All Displays) -->
+        <Grid Grid.Row="0" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
+                <!-- Filter Badges: WrapPanel adapts dynamically to screen width without any horizontal scrollbar -->
                 <ColumnDefinition Width="*"/>
+                <!-- Search & Action Controls: Clean layout with guaranteed visibility -->
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Filter Chips (Unified Professional Toolbar) -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal">
-                <Button Content="الكل" Command="{Binding SetFilterCommand}" CommandParameter="All" Style="{StaticResource SecondaryBtn}" Padding="14,8" Margin="0,0,8,0" FontSize="13.5"/>
-                <Button Content="البنود المسعرة" Command="{Binding SetFilterCommand}" CommandParameter="Priced" Style="{StaticResource SecondaryBtn}" Padding="14,8" Margin="0,0,8,0" FontWeight="Bold" FontSize="13.5"/>
-                <Button Content="بنود مستحدثة (VO)" Command="{Binding SetFilterCommand}" CommandParameter="VO" Style="{StaticResource SecondaryBtn}" Padding="14,8" Margin="0,0,8,0" FontWeight="SemiBold" FontSize="13.5"/>
-                <Button Content="مبالغ احتياطية (PS)" Command="{Binding SetFilterCommand}" CommandParameter="PS" Style="{StaticResource SecondaryBtn}" Padding="14,8" Margin="0,0,8,0" FontWeight="SemiBold" FontSize="13.5"/>
-                <Button Content="تحتاج مراجعة" Command="{Binding SetFilterCommand}" CommandParameter="Review" Style="{StaticResource SecondaryBtn}" Padding="14,8" Margin="0,0,8,0" FontWeight="SemiBold" FontSize="13.5"/>
-                <Button Content="المعتمدة" Command="{Binding SetFilterCommand}" CommandParameter="Approved" Style="{StaticResource SecondaryBtn}" Padding="14,8" FontWeight="SemiBold" FontSize="13.5"/>
-            </StackPanel>
-
-            <!-- Search Box -->
-            <Border Grid.Column="1" HorizontalAlignment="Right" Width="300" Margin="0,0,14,0">
-                <Grid>
-                    <TextBox Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" Padding="36,8,12,8" FontSize="13.5"/>
-                    <iconPacks:PackIconLucide Kind="Search" Width="16" Height="16" Foreground="{DynamicResource BrushTextSecondary}" HorizontalAlignment="Left" Margin="12,0,0,0" VerticalAlignment="Center"/>
-                </Grid>
-            </Border>
-
-            <!-- Actions (Approve All & Export Now) -->
-            <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button Command="{Binding ApproveAllCommand}" Style="{StaticResource SecondaryBtn}" Padding="16,8" Margin="0,0,8,0" FontSize="13.5">
+            <!-- Filter Chips with Clear Icons (Responsive WrapPanel) -->
+            <WrapPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
+                <Button Command="{Binding SetFilterCommand}" CommandParameter="All" Style="{StaticResource SecondaryBtn}" Padding="11,6" Margin="0,0,6,4" FontSize="12.5">
                     <StackPanel Orientation="Horizontal">
-                        <iconPacks:PackIconLucide Kind="CheckCheck" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <iconPacks:PackIconLucide Kind="ListFilter" Width="13" Height="13" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="الكل" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding SetFilterCommand}" CommandParameter="Priced" Style="{StaticResource SecondaryBtn}" Padding="11,6" Margin="0,0,6,4" FontSize="12.5">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="CheckCheck" Width="13" Height="13" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="البنود المسعرة" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding SetFilterCommand}" CommandParameter="VO" Style="{StaticResource SecondaryBtn}" Padding="11,6" Margin="0,0,6,4" FontSize="12.5">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="FilePlus" Width="13" Height="13" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="بنود مستحدثة (VO)" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding SetFilterCommand}" CommandParameter="PS" Style="{StaticResource SecondaryBtn}" Padding="11,6" Margin="0,0,6,4" FontSize="12.5">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="ShieldCheck" Width="13" Height="13" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="مبالغ احتياطية (PS)" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding SetFilterCommand}" CommandParameter="Review" Style="{StaticResource SecondaryBtn}" Padding="11,6" Margin="0,0,6,4" FontSize="12.5">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="CircleAlert" Width="13" Height="13" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="تحتاج مراجعة" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+                <Button Command="{Binding SetFilterCommand}" CommandParameter="Approved" Style="{StaticResource SecondaryBtn}" Padding="11,6" Margin="0,0,6,4" FontSize="12.5">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="BadgeCheck" Width="13" Height="13" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                        <TextBlock Text="المعتمدة" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+            </WrapPanel>
+
+            <!-- Search & Actions (Fixed & Guaranteed Layout) -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Search Box -->
+                <Border Width="190" Margin="0,0,8,4">
+                    <Grid>
+                        <TextBox Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" 
+                                 Style="{StaticResource ModernTextBox}" 
+                                 Padding="30,6,10,6" FontSize="12.5"/>
+                        <iconPacks:PackIconLucide Kind="Search" Width="14" Height="14" 
+                                                  Foreground="{DynamicResource BrushTextSecondary}" 
+                                                  HorizontalAlignment="Left" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+
+                <!-- اعتماد الكل -->
+                <Button Command="{Binding ApproveAllCommand}" Style="{StaticResource SecondaryBtn}" Padding="12,6" Margin="0,0,8,4" FontSize="12.5">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconLucide Kind="CheckCheck" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
                         <TextBlock Text="اعتماد الكل" FontWeight="SemiBold"/>
                     </StackPanel>
                 </Button>
 
-                <Button Command="{Binding ExportCommand}" Style="{StaticResource ModernBtn}" Padding="18,8" FontSize="13.5">
+                <!-- تصدير ودمج الآن -->
+                <Button Command="{Binding ExportCommand}" Style="{StaticResource ModernBtn}" Padding="14,6" Margin="0,0,0,4" FontSize="12.5">
                     <StackPanel Orientation="Horizontal">
-                        <iconPacks:PackIconLucide Kind="Download" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                        <iconPacks:PackIconLucide Kind="Download" Width="14" Height="14" Margin="0,0,5,0" VerticalAlignment="Center"/>
                         <TextBlock Text="تصدير ودمج الآن" FontWeight="Bold"/>
                     </StackPanel>
                 </Button>
@@ -58,7 +97,7 @@
         </Grid>
 
         <!-- Responsive High-Contrast Virtualized DataGrid (Precision Column-to-Cell Alignment) -->
-        <DataGrid Grid.Row="1" ItemsSource="{Binding FilteredItems}" 
+        <DataGrid Grid.Row="1" ItemsSource="{Binding PagedItems}" 
                   AutoGenerateColumns="False" CanUserAddRows="False"
                   CanUserSortColumns="False"
                   IsReadOnly="False"
@@ -225,8 +264,8 @@
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
 
-                <!-- Description (Dynamic Star Sizing, Strictly Right-Aligned with Header) -->
-                <DataGridTextColumn Header="وصف البند" Binding="{Binding TargetItem.Description}" Width="*" IsReadOnly="True"
+                <!-- Description (Explicit width + MinWidth so it never collapses in horizontal scroll) -->
+                <DataGridTextColumn Header="وصف البند" Binding="{Binding TargetItem.Description}" Width="350" MinWidth="220" IsReadOnly="True"
                                     HeaderStyle="{StaticResource RightAlignedGridColumnHeader}">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -286,6 +325,17 @@
                             <TextBlock Text="{Binding DisplayRateText}" 
                                        FontWeight="Bold" FontSize="13.5"
                                        HorizontalAlignment="Center" TextAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock.ToolTip>
+                                    <ToolTip Background="{DynamicResource BrushBgCard}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1">
+                                        <StackPanel Margin="4">
+                                            <TextBlock Text="{Binding DisplayRateText, StringFormat={}السعر المحقون: {0}}" FontWeight="Bold" Foreground="{DynamicResource BrushPrimary}"/>
+                                            <TextBlock Text="{Binding SourceTableDisplay, StringFormat={}الجدول المصدر: {0}}" FontSize="11.5" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,3,0,0"/>
+                                            <TextBlock Text="{Binding SourceItemCodeDisplay, StringFormat={}كود بند المصدر: {0}}" FontSize="11" Foreground="{DynamicResource BrushTextSecondary}"/>
+                                            <TextBlock Text="{Binding SourceRowIndex, StringFormat={}السطر في ملف المقاول: {0}}" FontSize="11" Foreground="{DynamicResource BrushTextSecondary}"/>
+                                            <TextBlock Text="{Binding DisplayConfidenceText, StringFormat={}الحالة: {0}}" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource BrushSuccess}" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </ToolTip>
+                                </TextBlock.ToolTip>
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
@@ -312,6 +362,45 @@
                                      Style="{StaticResource ModernTextBox}" Padding="4,2" HorizontalContentAlignment="Center"/>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellEditingTemplate>
+                </DataGridTemplateColumn>
+
+                <!-- Source Table & Excel Jump Column -->
+                <DataGridTemplateColumn Header="جدول المقاول المصدر" Width="200" MinWidth="180" IsReadOnly="True">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Button Command="{Binding DataContext.OpenMatchedSourceLocationCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        Visibility="{Binding HasMatchedSource, Converter={StaticResource BoolToVis}}"
+                                        Style="{StaticResource SecondaryBtn}"
+                                        Padding="5,2" Margin="0,0,6,0"
+                                        ToolTip="الانتقال إلى موقع هذا البند في ملف المقاول (Excel)">
+                                    <StackPanel Orientation="Horizontal">
+                                        <iconPacks:PackIconLucide Kind="ExternalLink" Width="10.5" Height="10.5" Foreground="{DynamicResource BrushPrimary}" Margin="0,0,3,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="المصدر" FontSize="10.5"/>
+                                    </StackPanel>
+                                </Button>
+                                <TextBlock Text="{Binding SourceTableDisplay}" 
+                                           FontSize="12"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsProvisionalSum}" Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsVariationOrder}" Value="True">
+                                                    <Setter Property="Foreground" Value="{DynamicResource BrushWarning}"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
 
                 <!-- Match Score -->
@@ -350,5 +439,64 @@
                 </DataGridTextColumn>
             </DataGrid.Columns>
         </DataGrid>
+
+        <!-- ========================================================================= -->
+        <!-- ROW 2: MODERN FLUENT PAGINATION BAR (100 ITEMS PER PAGE)                  -->
+        <!-- ========================================================================= -->
+        <Border Grid.Row="2" Background="{DynamicResource BrushBgCard}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="12,8" Margin="0,10,0,0">
+            <DockPanel LastChildFill="True">
+                <!-- Page Info / Item Count (Right side in RTL) -->
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+                    <Border Background="{DynamicResource BrushBgCardHover}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="5" Padding="8,4" Margin="0,0,10,0">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconLucide Kind="Layers" Width="13" Height="13" Margin="0,0,5,0" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center"/>
+                            <TextBlock Text="100 بند لكل صفحة" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSecondary}"/>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="{Binding PageInfoText}" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <!-- Navigation Controls (Left side in RTL) -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center">
+                    <!-- First Page -->
+                    <Button Command="{Binding FirstPageCommand}" IsEnabled="{Binding CanGoToPreviousPage}" Style="{StaticResource SecondaryBtn}" Padding="8,5" Margin="0,0,4,0" ToolTip="الصفحة الأولى">
+                        <iconPacks:PackIconLucide Kind="ChevronsRight" Width="14" Height="14"/>
+                    </Button>
+                    <!-- Previous Page -->
+                    <Button Command="{Binding PreviousPageCommand}" IsEnabled="{Binding CanGoToPreviousPage}" Style="{StaticResource SecondaryBtn}" Padding="10,5" Margin="0,0,6,0" ToolTip="الصفحة السابقة">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconLucide Kind="ChevronRight" Width="14" Height="14" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="السابق" FontSize="12" FontWeight="SemiBold"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Current Page Badge -->
+                    <Border Background="{DynamicResource BrushSelectedRow}" BorderBrush="{DynamicResource BrushPrimary}" BorderThickness="1" CornerRadius="6" Padding="12,5" Margin="0,0,6,0">
+                        <TextBlock Text="{Binding CurrentPageDisplay}" FontSize="12.5" FontWeight="Bold" Foreground="#FFFFFF"/>
+                    </Border>
+
+                    <!-- Next Page -->
+                    <Button Command="{Binding NextPageCommand}" IsEnabled="{Binding CanGoToNextPage}" Style="{StaticResource SecondaryBtn}" Padding="10,5" Margin="0,0,4,0" ToolTip="الصفحة التالية">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="التالي" FontSize="12" FontWeight="SemiBold" Margin="0,0,4,0"/>
+                            <iconPacks:PackIconLucide Kind="ChevronLeft" Width="14" Height="14" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <!-- Last Page -->
+                    <Button Command="{Binding LastPageCommand}" IsEnabled="{Binding CanGoToNextPage}" Style="{StaticResource SecondaryBtn}" Padding="8,5" Margin="0,0,10,0" ToolTip="الصفحة الأخيرة">
+                        <iconPacks:PackIconLucide Kind="ChevronsLeft" Width="14" Height="14"/>
+                    </Button>
+
+                    <!-- Jump to Page input -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="6,0,0,0">
+                        <TextBlock Text="انتقال إلى صفحة:" FontSize="12" Foreground="{DynamicResource BrushTextSecondary}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBox Text="{Binding JumpPageInput, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" Width="45" Height="27" Padding="2,1" FontSize="12" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"/>
+                        <Button Command="{Binding JumpToPageCommand}" Style="{StaticResource SecondaryBtn}" Padding="8,4" Height="27" Margin="4,0,0,0">
+                            <TextBlock Text="ذهاب" FontSize="11.5" FontWeight="SemiBold"/>
+                        </Button>
+                    </StackPanel>
+                </StackPanel>
+            </DockPanel>
+        </Border>
     </Grid>
 </UserControl>
