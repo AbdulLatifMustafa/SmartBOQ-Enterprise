@@ -53,10 +53,10 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
                 list.Add(indexed);
             }
 
-            // 2. Build High-Speed Inverted Token Index for O(1) Global Candidate Retrieval
+            // 2. Inverted token index for candidate retrieval
             var globalInvertedIndex = new InvertedTokenIndex(allIndexedSources);
 
-            // 3. Group target items by Normalized Bill Key while preserving original array indices
+            // 3. Group target items by bill key
             var targetsByBill = new Dictionary<string, List<TargetItemEntry>>(StringComparer.OrdinalIgnoreCase);
             for (int tIdx = 0; tIdx < targetItems.Count; tIdx++)
             {
@@ -70,7 +70,7 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
                 tList.Add(new TargetItemEntry(tgt, tIdx));
             }
 
-            // 4. Process bills with multi-threaded parallel partitioning
+            // 4. Match items within bill partitions
             var parallelOptions = new ParallelOptions
             {
                 CancellationToken = ct,
@@ -104,21 +104,19 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
                     }
                 }
 
-                // If source has ONLY one bill partition (i.e. caller already scoped sources to this bill),
-                // use that partition directly!
+                // Single bill partition in source: use directly
                 if (candidateSources == null && sourcesByBill.Count == 1)
                 {
                     candidateSources = sourcesByBill.Values.First();
                 }
 
-                // If bill has a large candidate pool (> 128 items), build local inverted index for rapid pruning
+                // Local inverted index for larger candidate partitions
                 InvertedTokenIndex? localBillIndex = (candidateSources != null && candidateSources.Count > 128)
                     ? new InvertedTokenIndex(candidateSources)
                     : null;
 
                 var intraConsumedSourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                // If this single bill has many targets, we can parallelize intra-bill matching as well
                 for (int tPos = 0; tPos < billTargets.Count; tPos++)
                 {
                     var entry = billTargets[tPos];
@@ -195,7 +193,7 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
                 }
             });
 
-            // 5. Global Fallback for remaining unmatched items (Accelerated via Global Inverted Token Index)
+            // 5. Global fallback for remaining unmatched items
             if (!unmatchedTargets.IsEmpty)
             {
                 var unmatchedList = unmatchedTargets.ToArray();
@@ -278,7 +276,7 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
         ScoredCandidate? best = null;
         double highestFitness = -1.0;
 
-        // If candidates list is large (> 128), use inverted index to prune candidate search space to top 40 candidates
+        // Prune candidate pool using inverted index when partition is large
         IReadOnlyList<IndexedSourceItem> candidatePool = (localBillIndex != null && targetHashes.Length > 0)
             ? localBillIndex.GetTopCandidates(targetHashes, consumedIds, target.Unit, topMax: 40)
             : allCandidates;
@@ -313,8 +311,7 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
                 double trigCosine = CalculateTrigonometricCosine(targetHashes, candidate.TokenHashes);
                 double jaccard = CalculateSortedHashJaccard(targetHashes, candidate.TokenHashes);
 
-                // Early-Exit Pruning: Levenshtein distance is strictly >= length difference (|L1 - L2|).
-                // If the maximum possible score cannot reach the minTextThresh threshold, skip edit distance calculation!
+                // Early pruning: check length difference before computing edit distance
                 int lenDiff = Math.Abs(target.NormalizedDescription.Length - candidate.Item.NormalizedDescription.Length);
                 double maxPossibleLev = 1.0 - ((double)lenDiff / maxLen);
                 double maxPossibleScore = (0.55 * maxPossibleLev) + (0.25 * trigCosine) + (0.20 * jaccard);

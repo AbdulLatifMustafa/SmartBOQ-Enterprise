@@ -17,6 +17,7 @@ using SmartBOQ.Infrastructure.Matching;
 using SmartBOQ.Infrastructure.Parsers;
 using SmartBOQ.Infrastructure.Storage;
 using SmartBOQ.Infrastructure.Verification;
+using SmartBOQ.Infrastructure.Logging;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace SmartBOQ.App.ViewModels;
@@ -601,9 +602,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         }
     }
 
-    // =========================================================================
-    // PAGINATION PROPERTIES & SLICING (100 ITEMS PER PAGE)
-    // =========================================================================
+    // Pagination properties
     public int CurrentPage
     {
         get => _currentPage;
@@ -1045,6 +1044,14 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
 
             Result = result;
             ProgressPercentage = 100;
+
+            // Generate diagnostic report in Log folder
+            try
+            {
+                ReconciliationDiagnosticLogger.WriteDiagnosticReport(FileBPath, sourceFilePaths, result);
+            }
+            catch { }
+
             StatusMessage = IsArabic 
                 ? $"اكتملت المطابقة الذكية في {result.ElapsedTime.TotalSeconds:F2} ثانية ({result.TotalTargetItems:N0} بند عبر {result.TargetSheets.Count} جدول)" 
                 : $"Reconciliation complete in {result.ElapsedTime.TotalSeconds:F2}s ({result.TotalTargetItems:N0} items across {result.TargetSheets.Count} tables)";
@@ -1057,6 +1064,19 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         }
         catch (Exception ex)
         {
+            // Log failure diagnostics
+            try
+            {
+                var sources = IngestedFiles
+                    .Where(f => f.Role != BoqFileRole.ConsultantTarget && File.Exists(f.FilePath))
+                    .Select(f => f.FilePath)
+                    .ToList();
+                if (sources.Count == 0 && File.Exists(FileAPath)) sources.Add(FileAPath);
+
+                ReconciliationDiagnosticLogger.WriteDiagnosticReport(FileBPath, sources, null, exception: ex);
+            }
+            catch { }
+
             StatusMessage = $"Error: {ex.Message}";
             MessageBox.Show(
                 (IsArabic ? "حدث خطأ أثناء المطابقة:\n" : "Error during reconciliation:\n") + ex.Message,
@@ -1176,7 +1196,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 }
             }
 
-            // 1. Export the Reconciled Schedule (with original sheets + Audit_Report + Pricing_Linkage_Map with dynamic live links)
+            // 1. Export reconciled schedule with audit report and linkage map
             await _service.ExportPricedScheduleAsync(
                 FileBPath, 
                 OutputFilePath, 
@@ -1218,6 +1238,19 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
 
             _ = ExecuteHistoricalSearchAsync(HistoricalSearchQuery);
 
+            string diagLogPath = string.Empty;
+            try
+            {
+                diagLogPath = ReconciliationDiagnosticLogger.WriteDiagnosticReport(
+                    FileBPath,
+                    new[] { FileAPath },
+                    Result,
+                    exportOutputPath: OutputFilePath,
+                    dashboardOutputPath: dashboardPath,
+                    snapshotRevisionId: $"Rev-{DateTime.Now:yyyyMMdd-HHmm}");
+            }
+            catch { }
+
             ProgressPercentage = 100;
             IsExported = true;
             LastExportedSchedulePath = OutputFilePath;
@@ -1228,14 +1261,21 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 ? "تم دمج وتصدير ملف المقايسة والداش بورد وسجلات الربط بنجاح!" 
                 : "Export completed and snapshot archived successfully!";
 
+            string logHint = !string.IsNullOrWhiteSpace(diagLogPath)
+                ? $"\n3. تقرير التشخيص الذكي (Log):\n{diagLogPath}\n"
+                : string.Empty;
+
             // Prompt user with options to open files
             string msg = IsArabic
                 ? $"تم الدمج والتصدير بنجاح!\n\n" +
                   $"1. ملف المقايسة المدمج:\n{OutputFilePath}\n" +
-                  $"(يتضمن أوراق العمل المسعرة + سجل الأحداث والتدقيق Audit_Report + خريطة ربط الأسعار Pricing_Linkage_Map مع التحديث التلقائي اللحظي)\n\n" +
-                  $"2. لوحة مؤشرات الإدارة (Dashboard):\n{dashboardPath}\n\n" +
-                  $"هل تريد فتح ملف المقايسة المسعر الآن في Excel؟"
-                : $"Export completed successfully!\n\nReconciled Schedule:\n{OutputFilePath}\n\nExecutive Dashboard:\n{dashboardPath}\n\nDo you want to open the reconciled file now in Excel?";
+                  $"(يتضمن أوراق العمل المسعرة + سجل التدقيق Audit_Report + خريطة ربط الأسعار Pricing_Linkage_Map)\n\n" +
+                  $"2. لوحة مؤشرات الإدارة (Dashboard):\n{dashboardPath}\n" +
+                  logHint +
+                  $"\nهل تريد فتح ملف المقايسة المسعر الآن في Excel؟"
+                : $"Export completed successfully!\n\nReconciled Schedule:\n{OutputFilePath}\n\nExecutive Dashboard:\n{dashboardPath}\n" +
+                  logHint +
+                  $"\nDo you want to open the reconciled file now in Excel?";
 
             var res = MessageBox.Show(msg, IsArabic ? "اكتمل التصدير بنجاح" : "Export Success", MessageBoxButton.YesNo, MessageBoxImage.Information);
             if (res == MessageBoxResult.Yes)
@@ -1288,6 +1328,18 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         }
         catch (Exception ex)
         {
+            try
+            {
+                ReconciliationDiagnosticLogger.WriteDiagnosticReport(
+                    FileBPath,
+                    new[] { FileAPath },
+                    Result,
+                    exportOutputPath: OutputFilePath,
+                    dashboardOutputPath: DashboardFilePath,
+                    exception: ex);
+            }
+            catch { }
+
             StatusMessage = $"Export Error: {ex.Message}";
             MessageBox.Show(
                 (IsArabic ? "حدث خطأ أثناء التصدير:\n" : "Error during export:\n") + ex.Message,
@@ -1446,7 +1498,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         int pageSize = PageSize > 0 ? PageSize : 100;
         int reqPage = resetToPageOne ? 1 : CurrentPage;
 
-        // Instant O(1) synchronous path for default unfiltered state (Zero allocations, instant for 2M items)
+        // Fast path for unfiltered state
         if (string.IsNullOrEmpty(query) && filter == "All")
         {
             int total = MatchedPairs.Count;
@@ -1465,14 +1517,13 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             return;
         }
 
-        // Deep High-Speed Multi-Threaded Parallel Search across all CPU cores for filtered/search state
+        // Parallel search evaluation
         var pairsSnapshot = MatchedPairs.ToList();
 
         Task.Run(() =>
         {
             if (ct.IsCancellationRequested) return;
 
-            // Parallel multi-core evaluation (scales linearly with CPU threads, handles millions of items in ms)
             var parallelFiltered = pairsSnapshot
                 .AsParallel()
                 .WithCancellation(ct)
@@ -1631,7 +1682,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         string? sheetName = mapping.SelectedSourceSheet;
         if (!string.IsNullOrWhiteSpace(sheetName) && sheetName.StartsWith("[") && sheetName.EndsWith("]"))
         {
-            // Global match or skip: open the source file at its active sheet without invalid sheet lookup
+            // Unscoped match: open source file at active sheet
             sheetName = null;
         }
         else if (!string.IsNullOrWhiteSpace(sheetName) && sheetName.StartsWith("[") && sheetName.Contains("] "))

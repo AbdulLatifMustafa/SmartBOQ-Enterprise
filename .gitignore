@@ -50,6 +50,7 @@ Thumbs.db
 ## Logs & Diagnostics
 *.log
 logs/
+[Ll]og/
 [Tt]estResults/
 [Tt]emp/
 [Tt]mp/

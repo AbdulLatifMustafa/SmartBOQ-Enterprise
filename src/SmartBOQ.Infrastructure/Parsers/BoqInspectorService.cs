@@ -363,9 +363,9 @@ public sealed class BoqInspectorService : IBoqInspector
         {
             var mapping = new ColumnMappingModel();
 
-            // Default fallback defaults:
-            // Contractor flat (Hatchway DP3): Col 17 (R: Rate), Col 11 (L: Desc), Col 10 (K: Code), Col 14 (O: Qty), Col 13 (N: Unit)
-            // Consultant hierarchical (REH): Col 6 (G: Rate), Col 2 (C: Desc), Col 0 (A: Code), Col 4 (E: Qty), Col 5 (F: Unit)
+            // Default column fallback mappings
+            // Contractor flat: Rate=17, Desc=11, Code=10, Qty=14, Unit=13
+            // Consultant hierarchical: Rate=6, Desc=2, Code=0, Qty=4, Unit=5
 
             try
             {
@@ -387,7 +387,7 @@ public sealed class BoqInspectorService : IBoqInspector
                     using var stream = new FileStream(targetFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 32768, FileOptions.SequentialScan);
                     using var reader = ExcelReaderFactory.CreateReader(stream);
 
-                    // Multi-sheet consultant schedule: advance to the first actual work bill sheet with detailed line items
+                    // Advance to first work bill sheet with detailed line items
                     do
                     {
                         string sName = reader.Name?.Trim() ?? string.Empty;

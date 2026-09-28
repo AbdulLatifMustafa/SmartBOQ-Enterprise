@@ -145,7 +145,7 @@ public sealed class BoqReconciliationService
         // 4. Execute SIMD-accelerated matching
         var matchedPairs = await _matcher.MatchItemsAsync(allTargetItems, sourceItems, sensitivity, ct);
 
-        // 5. Compute segregated currency summaries (Strict native currency fidelity - Zero FX blending)
+        // 5. Compute native currency summaries
         var currencySummaries = ComputeCurrencySummaries(sourceItems, matchedPairs);
 
         stopwatch.Stop();

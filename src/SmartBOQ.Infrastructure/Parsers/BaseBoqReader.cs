@@ -145,7 +145,7 @@ public abstract class BaseBoqReader : IBoqReader
             int commaCount = cleaned.Count(c => c == ',');
             int digitsAfterComma = cleaned.Length - commaIdx - 1;
 
-            // If single comma and not a standard 3-digit thousand chunk (e.g. 125,50 or 0,5 or 12,5) -> European decimal format
+            // Normalize European comma decimal format
             if (commaCount == 1 && (digitsAfterComma != 3 || cleaned.StartsWith("0")))
             {
                 cleaned = cleaned.Replace(',', '.');

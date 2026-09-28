@@ -11,7 +11,7 @@
 
             <BooleanToVisibilityConverter x:Key="BoolToVis"/>
 
-            <!-- Crisp High-Contrast Eye-Comfort Dark Mode Palette (Pure Non-Glare Off-White Typography, Deep Charcoal Surfaces, Subtle Refined Accents) -->
+            <!-- Theme Color Palette -->
             <Color x:Key="BgDark">#121316</Color>
             <Color x:Key="BgCard">#1A1C23</Color>
             <Color x:Key="BgCardHover">#232631</Color>
@@ -39,7 +39,7 @@
             <SolidColorBrush x:Key="BrushTextPrimary" Color="{StaticResource TextPrimary}"/>
             <SolidColorBrush x:Key="BrushTextSecondary" Color="{StaticResource TextSecondary}"/>
 
-            <!-- DataGrid & Input Dynamic Palette (Eye-Comfort Dark Selection - Zero Electric Blue) -->
+            <!-- Grid & Input Brushes -->
             <SolidColorBrush x:Key="BrushInputBg" Color="#15171D"/>
             <SolidColorBrush x:Key="BrushRowBg" Color="#1A1C23"/>
             <SolidColorBrush x:Key="BrushRowAltBg" Color="#16181E"/>
@@ -50,19 +50,19 @@
             <SolidColorBrush x:Key="BrushScrollThumbHover" Color="#55FFFFFF"/>
             <SolidColorBrush x:Key="BrushScrollThumbDrag" Color="#80FFFFFF"/>
 
-            <!-- Global SystemColors Overrides to Kill Electric Blue & Neon Selection Forever -->
+            <!-- System Highlight Overrides -->
             <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#273347"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#1F2633"/>
             <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#E2E6EF"/>
 
-            <!-- Global Window Style with European Digits (English Numbers: 0, 1, 2, 3...) -->
+            <!-- Global Window Style -->
             <Style TargetType="Window">
                 <Setter Property="NumberSubstitution.CultureSource" Value="Text"/>
                 <Setter Property="NumberSubstitution.Substitution" Value="European"/>
             </Style>
 
-            <!-- Base Responsive Typography with Eye-Comfort Tone & European Digits -->
+            <!-- Typography Style -->
             <Style TargetType="TextBlock">
                 <Setter Property="FontFamily" Value="Segoe UI, Tahoma, Arial"/>
                 <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
@@ -71,7 +71,7 @@
                 <Setter Property="NumberSubstitution.Substitution" Value="European"/>
             </Style>
 
-            <!-- Rounded Modern Button Style (Windows 11 Dark Mode Elevated Button - Crisp Contrast, Zero Glare) -->
+            <!-- Primary Button Style -->
             <Style x:Key="ModernBtn" TargetType="Button">
                 <Setter Property="Background" Value="#2A3548"/>
                 <Setter Property="Foreground" Value="#FFFFFF"/>
@@ -142,7 +142,7 @@
                 </Setter>
             </Style>
 
-            <!-- Primary Action Button (Unified Elevated Windows Dark Mode - Zero Neon) -->
+            <!-- Success Button Style -->
             <Style x:Key="SuccessBtn" TargetType="Button">
                 <Setter Property="Background" Value="#193327"/>
                 <Setter Property="Foreground" Value="#6EE7B7"/>
@@ -179,7 +179,7 @@
                 </Setter>
             </Style>
 
-        <!-- Modern Clean Navigation Tab Style (Zero Clutter, Zero Jarring White Boxes) -->
+        <!-- Navigation Tab Style -->
         <Style x:Key="NavTabStyle" TargetType="RadioButton">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
@@ -202,18 +202,18 @@
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
-                            <!-- Hover state: Clean, no solid background color! Just pure brighter text -->
+                            <!-- Hover state -->
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="Transparent"/>
                                 <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
                             </Trigger>
-                            <!-- Active / Checked state: Crisp accent underline, NO solid white/gray box! -->
+                            <!-- Active state -->
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="border" Property="Background" Value="Transparent"/>
                                 <Setter TargetName="border" Property="BorderBrush" Value="{DynamicResource BrushPrimary}"/>
                                 <Setter Property="Foreground" Value="{DynamicResource BrushPrimary}"/>
                             </Trigger>
-                            <!-- Hover on Checked: Keep active styling cleanly without jumping -->
+                            <!-- Active Hover state -->
                             <MultiTrigger>
                                 <MultiTrigger.Conditions>
                                     <Condition Property="IsChecked" Value="True"/>
@@ -267,7 +267,7 @@
             </Setter>
         </Style>
 
-        <!-- Modern Sleek ToolTip (Consistent Dark/Light Theme, No Jarring White Box) -->
+        <!-- ToolTip Style -->
         <Style TargetType="ToolTip">
             <Setter Property="Background" Value="{DynamicResource BrushBgCard}"/>
             <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
@@ -297,7 +297,7 @@
             </Setter>
         </Style>
 
-        <!-- Modern Minimalist Fluent ScrollBar (No Bulky Arrows, Sleek Rounded Floating Thumb) -->
+        <!-- ScrollBar Thumb Style -->
         <Style x:Key="ModernScrollThumb" TargetType="Thumb">
             <Setter Property="SnapsToDevicePixels" Value="True"/>
             <Setter Property="OverridesDefaultStyle" Value="True"/>
@@ -390,7 +390,7 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Modern Segmented Pill Sub-Nav Tab Button -->
+        <!-- SubNav Tab Style -->
         <Style x:Key="SubNavTabStyle" TargetType="RadioButton">
             <Setter Property="Background" Value="{DynamicResource BrushBgCardHover}"/>
             <Setter Property="Foreground" Value="{DynamicResource BrushTextSecondary}"/>
@@ -464,7 +464,7 @@
             </ControlTemplate.Triggers>
         </ControlTemplate>
 
-        <!-- Modern Clean ComboBox Style (Dark Mode Enterprise, Zero Hardcoded White) -->
+        <!-- ComboBox Style -->
         <Style x:Key="ModernComboBox" TargetType="ComboBox">
             <Setter Property="Background" Value="{DynamicResource BrushInputBg}"/>
             <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}"/>
@@ -576,7 +576,7 @@
             </Setter>
         </Style>
 
-        <!-- Global Adaptive DataGridRow Style (Dark Mode Eye-Comfort Selection - Zero Electric Blue) -->
+        <!-- DataGrid Row Style -->
         <Style TargetType="DataGridRow">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0,0,0,1"/>
@@ -592,7 +592,7 @@
             </Style.Triggers>
         </Style>
 
-        <!-- Global Adaptive DataGridCell Style (Zero Electric Blue Outline) -->
+        <!-- DataGrid Cell Style -->
         <Style TargetType="DataGridCell">
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>

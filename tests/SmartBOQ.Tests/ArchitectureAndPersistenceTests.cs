@@ -8,6 +8,7 @@ using SmartBOQ.Domain.Enums;
 using SmartBOQ.Domain.Interfaces;
 using SmartBOQ.Domain.Models;
 using SmartBOQ.Infrastructure.Export;
+using SmartBOQ.Infrastructure.Logging;
 using SmartBOQ.Infrastructure.Matching;
 using SmartBOQ.Infrastructure.Parsers;
 using SmartBOQ.Infrastructure.Storage;
@@ -305,5 +306,77 @@ public class ArchitectureAndPersistenceTests
                 try { File.Delete(dbPath); } catch { }
             }
         }
+    }
+
+    [Fact]
+    public void ReconciliationDiagnosticLogger_WritesStructuredReportFile()
+    {
+        var targetItem = new BoqItem
+        {
+            Id = "T-1",
+            BillNumber = "Bill 01",
+            ItemCode = "01.01",
+            Description = "Excavation in all types of soil",
+            Unit = "M3",
+            Quantity = 500m
+        };
+
+        var sourceItem = new BoqItem
+        {
+            Id = "S-1",
+            BillNumber = "Bill 01",
+            ItemCode = "01.01",
+            Description = "Excavation in ordinary soil",
+            Unit = "M3",
+            Quantity = 500m,
+            UnitRate = 45.5m,
+            Currency = "USD"
+        };
+
+        var pairs = new List<BoqMatchedPair>
+        {
+            new BoqMatchedPair
+            {
+                TargetItem = targetItem,
+                MatchedSourceItem = sourceItem,
+                InjectedRate = 45.5m,
+                Confidence = MatchConfidence.Exact,
+                SimilarityScore = 0.98,
+                IsApproved = true
+            }
+        };
+
+        var curSummary = new CurrencyBucketSummary
+        {
+            Currency = "USD",
+            TotalBaseAmount = 22750m,
+            TotalRemeasureAmount = 22750m,
+            ItemsCount = 1
+        };
+
+        var result = new ReconciliationResult
+        {
+            MatchedPairs = pairs,
+            TargetSheets = new List<BoqSheet>(),
+            SourceItems = new List<BoqItem> { sourceItem },
+            CurrencySummaries = new List<CurrencyBucketSummary> { curSummary },
+            ElapsedTime = TimeSpan.FromMilliseconds(350)
+        };
+
+        string logPath = ReconciliationDiagnosticLogger.WriteDiagnosticReport(
+            targetFilePath: "C:\\Project\\Tender_BOQ.xlsx",
+            sourceFilePaths: new[] { "C:\\Project\\Contractor_Rates.xlsx" },
+            result: result,
+            exportOutputPath: "C:\\Project\\Reconciled_BOQ.xlsx",
+            dashboardOutputPath: "C:\\Project\\Dashboard.xlsx",
+            snapshotRevisionId: "REV-2026-TEST");
+
+        Assert.True(File.Exists(logPath));
+        string content = File.ReadAllText(logPath);
+        Assert.Contains("DIAGNOSTIC REPORT", content);
+        Assert.Contains("Tender_BOQ.xlsx", content);
+        Assert.Contains("Contractor_Rates.xlsx", content);
+        Assert.Contains("USD", content);
+        Assert.Contains("SUCCESS", content);
     }
 }

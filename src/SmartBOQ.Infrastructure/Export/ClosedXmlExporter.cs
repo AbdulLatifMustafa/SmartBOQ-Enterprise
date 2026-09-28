@@ -62,7 +62,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 Thread.CurrentThread.CurrentCulture = CultureInfo.InvariantCulture;
                 Thread.CurrentThread.CurrentUICulture = CultureInfo.InvariantCulture;
 
-                // Step 1: Copy original template to output path to preserve 100% of formatting, hierarchy, and design
+                // Step 1: Copy template to output path
                 if (!string.Equals(Path.GetFullPath(templateFilePath), Path.GetFullPath(outputFilePath), StringComparison.OrdinalIgnoreCase))
                 {
                     File.Copy(templateFilePath, outputFilePath, overwrite: true);
@@ -73,7 +73,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
                 using var workbook = new XLWorkbook(outputFilePath);
 
-                // Step 3: Inject rates into target bill sheets - ZERO design or formatting modifications to original sheets
+                // Step 3: Inject rates into target bill sheets
                 var sheetGroups = matchedPairs.GroupBy(p => p.TargetItem.BillNumber).ToList();
                 int totalSheets = sheetGroups.Count;
                 int processedSheets = 0;
@@ -103,12 +103,12 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
                         if (pair.IsApproved && pair.InjectedRate.HasValue)
                         {
-                            // ONLY set the numeric value into Column G - preserve 100% of original cell fonts, borders, and fills
+                            // Write numeric rate value without modifying formatting
                             rateCell.Value = (double)pair.InjectedRate.Value;
                         }
                         else
                         {
-                            // Unpriced / Unmatched item: ensure rate cell is cleared of any stale residual values
+                            // Clear rate cell for unpriced or unmatched items
                             rateCell.Clear(XLClearOptions.Contents);
                         }
                     }
@@ -116,11 +116,11 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                     processedSheets++;
                 }
 
-                // Step 4: Append / Update interactive Audit_Report and Pricing_Linkage_Map worksheets
+                // Step 4: Generate Audit_Report and Pricing_Linkage_Map worksheets
                 CreateAuditLogWorksheet(workbook, matchedPairs, sourceContractorFilePath);
                 CreatePricingLinkageMapWorksheet(workbook, matchedPairs, sourceContractorFilePath);
 
-                // Step 5: Save populated workbook - 100% original sheets, tabs, colors, and design preserved
+                // Step 5: Save workbook
                 workbook.Save();
 
                 // Step 6: Inject relative dynamic links if source contractor file is provided
@@ -269,7 +269,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         ws.Column(14).Width = 16; // Confidence
         ws.Column(15).Width = 22; // Status / Notes
 
-        // Sort pairs: Injected & Approved items FIRST, then Variation Orders, then Shielded PS
+        // Sort pairs: approved items, then provisional sums, then bill/row order
         var sortedPairs = matchedPairs
             .OrderByDescending(p => p.IsApproved && p.InjectedRate.HasValue && p.InjectedRate > 0)
             .ThenBy(p => p.TargetItem.Type == BoqItemType.ProvisionalSum ? 1 : 0)
@@ -277,7 +277,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             .ThenBy(p => p.TargetItem.AnchorRowIndex)
             .ToList();
 
-        // Excel worksheet hard limit is 1,048,576 rows. Enforce safe cap to prevent worksheet corruption.
+        // Enforce maximum worksheet row limit
         const int maxExcelSheetRows = 1_048_500;
         int maxExportRows = Math.Min(sortedPairs.Count, maxExcelSheetRows - headerRow - 5);
         var exportPairs = sortedPairs.Take(maxExportRows);
@@ -326,7 +326,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             string safeSheet = item.BillNumber.Replace("'", "''");
             string targetCellRef = $"'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
 
-            // Col 1: Direct Interactive Quick-Jump to Tender Schedule (Zero Emojis, English Digits)
+            // Col 1: Tender Schedule jump link
             var jumpCell = ws.Cell(rowIdx, 1);
             if (isPriced)
             {
@@ -349,7 +349,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             }
             jumpCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-            // Col 2: Direct Interactive Quick-Jump to Contractor Master Rates File & Table Record (Zero Emojis, English Digits)
+            // Col 2: Contractor source record link
             var srcJumpCell = ws.Cell(rowIdx, 2);
             if (srcItem != null && srcItem.AnchorRowIndex > 0)
             {
@@ -624,7 +624,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             .ThenBy(p => p.TargetItem.AnchorRowIndex)
             .ToList();
 
-        // Excel worksheet hard limit is 1,048,576 rows. Enforce safe cap to prevent worksheet corruption.
+        // Enforce maximum worksheet row limit
         const int maxExcelSheetRows = 1_048_500;
         int maxExportRows = Math.Min(sortedPairs.Count, maxExcelSheetRows - headerRow - 5);
         var exportPairs = sortedPairs.Take(maxExportRows);
@@ -660,7 +660,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             }
             tenderJump.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-            // Col 2: Open and focus on Contractor Rates Cell and Full Table Record (English Digits)
+            // Col 2: Contractor source record link
             var srcJump = ws.Cell(rowIdx, 2);
             if (isLinked)
             {
@@ -675,7 +675,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 string tblStartLetter = XLHelper.GetColumnLetterFromNumber(tblStart);
                 string tblEndLetter = XLHelper.GetColumnLetterFromNumber(tblEnd);
 
-                // Smart Algorithm: Select entire table row record AND focus ActiveCell directly on Net Rate
+                // Target table row record and rate cell
                 string smartRange = $"{tblStartLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}:{tblEndLetter}{srcRow.ToString(CultureInfo.InvariantCulture)},{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}";
                 string srcRef = $"{contractorFileName}#{safeSrcSheet}!{smartRange}";
                 srcJump.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"[ {srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)} ] فتح وتحديد السعر والجدول\")";
@@ -758,7 +758,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             ws.Cell(rowIdx, 11).Value = isLinked ? srcItem!.AnchorRowIndex.ToString(CultureInfo.InvariantCulture) : "-";
             ws.Cell(rowIdx, 11).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-            // Col 12: Contractor Cell (Clickable link to contractor file cell & full table record!)
+            // Col 12: Contractor cell link
             var cellRefCell = ws.Cell(rowIdx, 12);
             if (isLinked)
             {
@@ -773,7 +773,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 string tblStartLetter = XLHelper.GetColumnLetterFromNumber(tblStart);
                 string tblEndLetter = XLHelper.GetColumnLetterFromNumber(tblEnd);
 
-                // Smart Algorithm: Select entire table row record AND focus ActiveCell directly on Net Rate
+                // Target table row record and rate cell
                 string smartRange = $"{tblStartLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}:{tblEndLetter}{srcRow.ToString(CultureInfo.InvariantCulture)},{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}";
                 string srcRef = $"{contractorFileName}#{safeSrcSheet}!{smartRange}";
                 cellRefCell.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}\")";
@@ -1104,7 +1104,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             wbRelsDoc.Save(s);
         }
 
-        // 6. Update xl/workbook.xml with externalReferences, updateLinks="always", and fullCalcOnLoad="1"
+        // 6. Update external references in xl/workbook.xml
         XNamespace wbNs = wbDoc.Root?.Name.Namespace ?? "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
         var extRefsElem = wbDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "externalReferences");
         if (extRefsElem == null)
@@ -1121,14 +1121,14 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             }
         }
 
-        // Ensure fullCalcOnLoad="1" and forceFullCalculation="1" so all formulas recalculate on open without forcing external link blocking alerts
+        // Configure full calculation on workbook open
         var wbPr = wbDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "workbookPr");
         if (wbPr != null && wbPr.Attribute("updateLinks")?.Value == "always")
         {
             wbPr.Attribute("updateLinks")?.Remove();
         }
 
-        // Set fullCalcOnLoad="1" and forceFullCalculation="1" so all formulas recalculate on open
+        // Ensure full calculation flags are set
         var calcPr = wbDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "calcPr");
         if (calcPr != null)
         {
