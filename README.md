@@ -49,11 +49,12 @@ SmartBOQ.slnx
 Detailed architectural and algorithmic documentation is available in the [`doc/`](./doc) folder:
 
 * **[doc/README.md](./doc/README.md)**: Master AI & developer orientation guide.
-* **[doc/ARCHITECTURE.md](./doc/ARCHITECTURE.md)**: Architectural layers, dependency flow, and benchmarks.
-* **[doc/DATA_MODELS.md](./doc/DATA_MODELS.md)**: Specifications for `BoqItem`, `BoqMatchedPair`, and `CurrencyAmount`.
-* **[doc/MATCHING_ALGORITHM.md](./doc/MATCHING_ALGORITHM.md)**: Tokenization, Levenshtein, Jaccard, and scoring weights.
-* **[doc/EXCEL_PIPELINE.md](./doc/EXCEL_PIPELINE.md)**: OpenXML external linking and compound union hyperlink engine.
-* **[doc/SUPPORTED_FILE_STRUCTURES.md](./doc/SUPPORTED_FILE_STRUCTURES.md)**: Supported file schemas, ingestion standards, and compatibility checklists.
+* **[doc/ENGINEERING_STANDARDS.md](./doc/ENGINEERING_STANDARDS.md)**: Master engineering specifications, memory budgets, and quality gates.
+* **[doc/ARCHITECTURE.md](./doc/ARCHITECTURE.md)**: Architectural layers, decoupled ViewModel coordinator, and benchmarks.
+* **[doc/DATA_MODELS.md](./doc/DATA_MODELS.md)**: Specifications for `BoqItem`, `BoqMatchedPair`, `CurrencyBucketSummary`.
+* **[doc/MATCHING_ALGORITHM.md](./doc/MATCHING_ALGORITHM.md)**: Inverted Token Index, early-exit pruning, Levenshtein, and Jaccard.
+* **[doc/EXCEL_PIPELINE.md](./doc/EXCEL_PIPELINE.md)**: OpenXML external linking, package repair, and compound union hyperlinks.
+* **[doc/SUPPORTED_FILE_STRUCTURES.md](./doc/SUPPORTED_FILE_STRUCTURES.md)**: Universal Adaptive Reader, Semantic Column Resolver, and anomaly recovery.
 * **[doc/DEPLOYMENT_GUIDE.md](./doc/DEPLOYMENT_GUIDE.md)**: Build flags, runtime verification gate, and client distribution.
 
 ---

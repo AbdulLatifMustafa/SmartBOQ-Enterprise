@@ -2,134 +2,107 @@
 
 ## 1. Executive Technical Overview
 
-SmartBOQ Enterprise utilizes an **asymmetric dual-stream ingestion pipeline** engineered specifically for Tier-1 civil, infrastructure, and MEP engineering contracts. The engine ingests two distinct types of Excel workbooks:
+**SmartBOQ Enterprise v2.0** utilizes a fully adaptive, universal ingestion architecture engineered to parse arbitrary Bill of Quantities (BOQ) spreadsheets from contractors, engineering consultancies, and government authorities across the MENA region and worldwide.
 
-1. **File A (The Pricing Source):** The Contractor’s Master Pricing Schedule — structured as a denormalized, high-throughput **Flat Tabular Matrix**.
-2. **File B (The Tender Target):** The Consultant’s Contractual Bill of Quantities (BOQ) — structured as a **Hierarchical, Multi-Worksheet Workbook** complete with live calculation trees, cross-sheet references, and summary rollups.
+Unlike rigid traditional estimating suites, SmartBOQ **does not enforce rigid templates, hardcoded column positions, or specific sheet names**.
 
 ```mermaid
 flowchart TD
-    subgraph FileA["File A: Contractor Master Pricing (Flat Schedule)"]
-        FA1["Single Flat Worksheet (e.g., 'Sheet1')"]
-        FA2["Denormalized Columns: Bill + Item + Scope + Qty + Net Rate"]
-        FA3["Forward-Only Streaming Reader (O(1) Memory Overhead)"]
+    subgraph Ingestion["Universal Ingestion Stream"]
+        F1["Contractor Pricing Schedule(s)<br/>(Flat, Multi-Column, or Multi-Sheet)"] --> R1["UniversalAdaptiveBoqReader<br/>(SequentialScan Streaming $O(1)$)"]
+        F2["Consultant Tender BOQ<br/>(Hierarchical, Multi-Worksheet)"] --> R1
+        R1 --> S1["SemanticColumnResolver<br/>(Multilingual Regex + Data-Type Heuristics)"]
     end
 
-    subgraph FileB["File B: Consultant Tender BOQ (Multi-Sheet Hierarchy)"]
-        B1["Partitioned Tabs: Bill 01, Bill 02A, Bill 03..."]
-        B2["Self-Healing Dynamic Header Detection (Rows 1–25)"]
-        B3["Automated Contractual Shielding for PS & Summaries"]
+    subgraph ChannelControl["Channel & Topological Mapping"]
+        S1 --> C1["Auto-Detected Column Routing"]
+        C1 --> C2["Optional Manual Override<br/>(Column Channels Tab)"]
+        C1 --> C3["Topological Sheet Linker<br/>(Multi-Contractor Sheet Linker Tab)"]
+        C2 --> C4["SQLite Preset Repository<br/>(Saved Contractor Mappings)"]
     end
 
-    subgraph CoreEngine["SmartBOQ Enterprise Core Engine"]
-        M1["Myers' Bit-Parallel Edit Distance & Token Hash Similarity"]
-        M2["Alphanumeric Signature Parsing (Regex-based, Project-Agnostic)"]
-        M3["Zero-Allocation Pool (.NET 10 AlternateLookup)"]
+    subgraph ResilientRecovery["Resilient Anomaly Normalization"]
+        C1 --> N1["Eastern Arabic & Persian Digit Conversion (٠-٩ → 0-9)"]
+        C1 --> N2["European Decimal Comma Normalization (125,50 → 125.50)"]
+        C1 --> N3["Currency Symbol Cleansing (EGP, USD, ج.م, $)"]
+        C1 --> N4["Formula Error Shields (#VALUE!, #REF!, Rate only)"]
     end
 
-    subgraph OutputTarget["Reconciled Deliverables"]
-        O1["Priced Tender Schedule (100% Formulas & Layout Intact)"]
-        O2["Deep Audit Trail with Exact Two-Way Cell Hyperlinks"]
-        O3["Executive Pareto Dashboard (Automated Trade Aggregation)"]
+    subgraph Deliverables["Enterprise Deliverables"]
+        N1 & N2 & N3 & N4 --> D1["Priced Reconciled BOQ (100% Original Formatting)"]
+        D1 --> D2["Interactive Audit Report & Pricing Linkage Map"]
+        D1 --> D3["Standalone Executive KPI Dashboard"]
+        D1 --> D4["Diagnostic Log Text Report (Log/*.txt)"]
     end
-
-    FileA --> M1
-    FileB --> M2
-    M1 & M2 & M3 --> OutputTarget
 ```
 
 ---
 
-## 2. File A Specification: Contractor Master Rates Schedule (Flat Table)
+## 2. Ingestion Engine: `UniversalAdaptiveBoqReader`
 
-### Purpose & Architecture
-File A provides the approved commercial rate repository. The reader (`HatchwayFlatReader`) processes this file via streaming `ExcelDataReader` with continuous $O(1)$ memory footprint regardless of file size (tested up to 500,000+ rows).
-
-### Structural Requirements
-* **Worksheet Layout:** Data resides in the primary data tab (e.g., `Sheet1` or the first available sheet).
-* **Row Granularity:** One priced scope line item per row. Blank separator rows are automatically skipped.
-* **Row 1 Metadata Scan:** The reader inspects row 1 across all columns to extract the **Contract Currency** (`EGP`, `USD`, `EUR`, `SAR`, etc.) to enforce strict zero-blending currency isolation.
-
-### Standard Column Schema
-
-| Column Index | Field Name | Type | Mandatory? | Description & Semantics |
-| :--- | :--- | :--- | :---: | :--- |
-| **Col 2 (C)** | `Bill Name` | String | **Yes** | Bill or Package identifier (e.g., `Bill 02A-3BR Villa East`, `Bill 05-Infra`). Rows not starting with standard bill signatures are safely bypassed. |
-| **Col 3–4 (D–E)** | `Section / Sub-Section` | String | No | Trade or structural level (e.g., `Earthworks > Excavation`). Combined into a composite hierarchy path. |
-| **Col 10 (K)** | `Item Code` | String | No | Bill item code / alphanumeric reference (e.g., `A`, `1.01`, `C.02`). |
-| **Col 11 (L)** | `Description` | String | **Yes** | Detailed engineering specification text. Normalized and tokenized for Bit-Parallel Levenshtein matching. |
-| **Col 13 (N)** | `Unit (UOM)` | String | **Yes** | Standard engineering unit of measurement (`m2`, `m3`, `t`, `nr`, `item`, `lm`, etc.). |
-| **Col 14 (O)** | `Quantity` | Numeric | **Yes** | Contractor's measured scope quantity. Parsed with invariant culture tolerance. |
-| **Col 16 (Q)** | `Number Off (Multiplier)` | Numeric | No | Repetition factor (e.g., number of typical villas). Defaults to `1` if omitted. |
-| **Col 17 (R)** | `Net Rate` | Numeric | **Yes** | **The approved Contractor Unit Price.** Injected into the consultant schedule. |
-| **Col 18 (S)** | `Net Bill Amount` | Numeric | No | Contractor line total (`Rate × Qty × Multiplier`). |
-| **Col 19 (T)** | `Notes / Type` | String | No | Special flags (e.g., `Rate only` scopes). |
+### Operational Characteristics:
+* **Forward-Only Streaming**: Built upon `ExcelDataReader` utilizing low-level memory streams with sequential scanning. Does not load the entire Excel DOM into memory, maintaining a flat memory footprint (<200 MB RAM for 100,000+ rows).
+* **Multi-Format Support**: Reads `.xlsx`, `.xlsm`, `.xlsb`, and legacy `.xls` (Excel 97–2003).
+* **Dynamic Table Anchor Detection**: Automatically skips decorative preamble rows, project logos, and administrative metadata to lock onto the actual data table.
 
 ---
 
-## 3. File B Specification: Consultant Tender BOQ (Hierarchical Multi-Sheet)
+## 3. Intelligent Header Discovery: `SemanticColumnResolver`
 
-### Purpose & Architecture
-File B is the client's official tender document. The reader (`HierarchicalBoqReader`) and exporter (`ClosedXmlExporter`) guarantee **zero corruption of original styles, formatting, font colors, row heights, or calculation formulas**.
+The `SemanticColumnResolver` automatically identifies column roles across arbitrary languages (Arabic, English, French) and custom layouts:
 
-### Structural Requirements
-* **Multi-Tab Division:** Each bill of quantities or building package is isolated in its own worksheet tab (e.g., `Bill 1`, `Bill 02A`, `Bill 03B`, `Bill 04`, `Bill 05`).
-* **Non-Bill / Summary Sheet Shielding:** Sheets identified as administrative preambles, summaries, or non-measurement schedules (`Cover`, `Summary`, `Grand Summary`, `Dayworks`, `Schedule of Insurance`, `Price Analysis`) are **strictly excluded from rate injection** to preserve original summary summation formulas.
+### 3.1 Multilingual Header Canonical Dictionaries:
+* **Item Code (`ItemCode`)**:
+  `item`, `code`, `ref`, `pos`, `line`, `no.`, `كود`, `كود البند`, `رقم البند`, `م`, `مسلسل`, `بند`, `رقم`
+* **Description (`Description`)**:
+  `description`, `particular`, `statement`, `scope`, `work`, `specification`, `details`, `الوصف`, `البيان`, `تفاصيل`, `تفاصيل البند`, `بيان الأعمال`, `المواصفات`
+* **Measurement Unit (`Unit`)**:
+  `unit`, `uom`, `measure`, `unit of measure`, `unité`, `الوحدة`, `وحدة القياس`, `المقياس`
+* **Quantity (`Quantity`)**:
+  `quantity`, `qty`, `vol`, `volume`, `quantities`, `qte`, `الكمية`, `الكميات`, `إجمالي الكمية`
+* **Unit Rate (`UnitRate`)**:
+  `unit rate`, `unit price`, `rate`, `price`, `net rate`, `tender rate`, `p.u.`, `prix unitaire`, `سعر الوحدة`, `الفئة`, `فئة`, `السعر`, `سعر البند`, `سعر إفرادي`, `سعر مفرد`
+* **Total Amount (`TotalAmount`)**:
+  `total amount`, `total price`, `amount`, `total`, `net amount`, `montant`, `الإجمالي`, `المبلغ`, `القيمة`, `إجمالي القيمة`, `جملة`
 
-### Dynamic Self-Healing Header Discovery (Rows 1–25)
-The engine **does not mandate fixed column positions** for the consultant file. Instead, it performs a 25-row adaptive semantic scan to discover column roles:
-
-```text
-[ITEM / CODE]        --> Auto-mapped to Item Code
-[DESCRIPTION / SCOPE]--> Auto-mapped to Scope Description
-[QTY / QUANTITY]     --> Auto-mapped to Tender Quantity
-[UNIT / UOM]         --> Auto-mapped to Measurement Unit
-[RATE / PRICE]       --> Target Column (Default: Col G / 7)
-[AMOUNT / TOTAL]     --> Formula Column (Default: Col H / 8)
-```
-
-### Provisional Sums (PS) Shielding Protocol
-* **Detection:** Any worksheet or line item flagged with `Provisional`, `PS`, or allocated client lump sums (e.g., `Bill 6 Provisional Sum`, `Bill 06.1A-3BR Villa PS`).
-* **Action:** Contractually locked. SmartBOQ will **never overwrite or inject contractor rates into PS items**, reporting them with `100% Intact - Contractually Shielded` status in executive dashboards.
-
----
-
-## 4. Rate Injection & Two-Way Interactive Navigation
-
-When reconciliation completes, the exporter injects values using two complementary mechanisms:
-
-```
-Consultant Tender Sheet (e.g., 'Bill 03B-6Plex TH(West)'):
-┌──────────┬─────────────────────────────┬──────────┬──────────┬────────────────────────────────┬───────────────────────────┐
-│ Code (A) │ Description (C)             │ Qty (E)  │ Unit (F) │ Injected Rate (Col G)          │ Preserved Total (Col H)   │
-├──────────┼─────────────────────────────┼──────────┼──────────┼────────────────────────────────┼───────────────────────────┤
-│ C        │ Disposal of excavated...    │ 494.00   │ m3       │ =[1]Sheet1!$R$35               │ =E35*G35                  │
-└──────────┴─────────────────────────────┴──────────┴──────────┴────────────────────────────────┴───────────────────────────┘
-                                                                           ▲
-                                                         OpenXML Relative Dynamic Link
-                                                                           │
-Contractor Master Rates File ('DP3 - Hatchway.xlsx'):                      │
-┌──────────────┬─────────────────────────────┬──────────┬──────────────────┴─────────────┐
-│ Bill Name (C)│ Description (L)             │ Qty (O)  │ Net Rate (Col R, Row 35)       │
-├──────────────┼─────────────────────────────┼──────────┼────────────────────────────────┤
-│ Bill 03B...  │ Disposal of excavated...    │ 494.00   │ 8.00 EGP                       │
-└──────────────┴─────────────────────────────┴──────────┴────────────────────────────────┘
-```
-
-1. **Cell-Level Dynamic OpenXML Linking:**
-   - Formula in Column G: `=[1]Sheet1!$R$35`
-   - Configured with `updateLinks="always"` and `fullCalcOnLoad="1"` so that updates to the contractor's file automatically cascade through the consultant's workbook.
-2. **Interactive Audit Trail Hyperlinks (`Audit_Report` Tab):**
-   - **Column A:** `=HYPERLINK("#'Bill 03B-6Plex TH(West)'!G35", "[ G35 ] Tender")` -> Jumps to the exact row in the consultant schedule.
-   - **Column B:** `=HYPERLINK("DP3 - Hatchway.xlsx#'Sheet1'!R35", "[ R35 ] Contractor Rate")` -> Instantly launches the contractor workbook and highlights the exact rate cell.
+### 3.2 Statistical Data-Type Heuristics (Headerless Fallback):
+If a sheet lacks standard text headers, the resolver automatically executes statistical analysis:
+1. **Description Column**: Column exhibiting the highest average string length (>60 characters) with zero numeric tokens.
+2. **Unit Column**: Column exhibiting repetitive recognized engineering unit tokens (`M3`, `M2`, `LM`, `KG`, `TON`, `NO`, `LS`, `م3`, `م2`, `م.ط`, `عدد`, `مقطوعية`).
+3. **Quantity & Rate Columns**: Evaluated based on numeric density and multiplication relationship to total amount columns.
 
 ---
 
-## 5. Compatibility Checklist for New Projects
+## 4. Manual Channel Routing & Topological Sheet Linker
 
-To run SmartBOQ out-of-the-box on any new project:
+For non-standard or highly complex joint-venture submissions, the GUI provides absolute manual control:
 
-- [x] **File A (Contractor):** Saved in `.xlsx` format as a single-sheet flat list with standard column headers for Bill, Description, Unit, Quantity, and Net Rate.
-- [x] **File B (Consultant):** Saved in `.xlsx` format with individual bill worksheets; column headers (`Item`, `Description`, `Qty`, `Unit`, `Rate`, `Total`) appear within rows 1 to 25.
-- [x] **Currency Uniformity:** Currency indicators in Row 1 match between both files (`EGP`, `USD`, `EUR`, etc.) to trigger zero-blending currency isolation.
-- [x] **Formulas Preserved:** Existing summation and total formulas in Column H remain 100% intact with zero `#REF!` or `#VALUE!` corruption.
+### 4.1 Column Channels Tab (`ColumnChannelsTab`)
+* Displays detected source and target columns side-by-side.
+* Allows engineers to override any column assignment (Columns A through Z, AA, AB...) via interactive dropdowns.
+* **Presets Engine**: Custom column configurations can be saved directly into SQLite (e.g. `Contractor_Orascom_Preset`) and recalled instantaneously.
+
+### 4.2 Topological Sheet Linker Tab (`SheetLinkerTab`)
+* Supports multi-source tendering where different contractors price different bills (e.g. Contractor A prices Civil, Contractor B prices MEP).
+* Allows mapping specific consultant bill sheets to specific contractor source sheets or files.
+
+---
+
+## 5. Resilient Anomaly Normalization Pipeline
+
+During ingestion, all cell values pass through automated normalization filters:
+
+| Anomaly Type | Problem in Real BOQs | SmartBOQ Algorithmic Resolution |
+| :--- | :--- | :--- |
+| **Arabic-Indic Numerals** | Quantities or rates formatted as `١٢٥٠` or `٤٥٫٥٠`. | Automatically converted to Western European ASCII digits (`1250`, `45.50`). |
+| **European Decimal Comma** | Rates formatted as `125,50` instead of `125.50`. | Auto-detected: single comma without 3-digit thousand chunk is converted to `.`. |
+| **Currency Text in Numbers** | Cells containing `450 EGP`, `120 USD`, or `٥٠ ج.م`. | Currency tokens are stripped and assigned to the sheet currency bucket without altering the rate. |
+| **Formula Errors** | Cells evaluating to `#VALUE!`, `#REF!`, `#DIV/0!`, `#N/A`. | Safely captured and treated as null rates without interrupting ingestion. |
+| **Descriptive Rate Tokens** | Cells stating `Rate only`, `Included`, `بند محمل`. | Identified as non-numeric contractual notes and preserved without crashing the parser. |
+
+---
+
+## 6. Contractual Shielding Protocol
+
+* **Provisional Sums (PS)**: Any sheet or line item containing `Provisional`, `PS`, or contractually shielded lump-sum allowances is locked. SmartBOQ **never overwrites** provisional sum rates, preserving client contingency allowances.
+* **Variation Orders (VO)**: Line items present in the contractor file but absent from the official consultant tender schedule are classified as Variation Orders and reported in a dedicated section of the executive audit report.

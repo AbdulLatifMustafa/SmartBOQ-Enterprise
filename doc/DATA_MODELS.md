@@ -7,7 +7,7 @@ This document provides a comprehensive reference for the core domain entities, v
 ## 1. Core Entities & Value Objects
 
 ### 1.1 `BoqItem` (Immutable Domain Record)
-Represents a single bill of quantities line item.
+Represents a single Bill of Quantities line item.
 
 ```csharp
 public sealed record BoqItem
@@ -35,8 +35,8 @@ public sealed record BoqItem
     public int AmountColumnIndex { get; init; } = 8;   // Default Column H
 
     // Table Boundary Bounds for Smart Multi-Cell Selection
-    public int TableStartColumnIndex { get; init; } = 1; // e.g. Col C (3) in contractor flat schedule
-    public int TableEndColumnIndex { get; init; } = 8;   // e.g. Col S (19) in contractor flat schedule
+    public int TableStartColumnIndex { get; init; } = 1;
+    public int TableEndColumnIndex { get; init; } = 8;
 
     // Computed Evaluation
     public bool IsPriced => UnitRate.HasValue && UnitRate.Value > 0m;
@@ -45,13 +45,6 @@ public sealed record BoqItem
     public CurrencyAmount CalculateTotalScopeAmount();
 }
 ```
-
-#### Key Design Decisions on `BoqItem`:
-1. **Multi-Row Descriptions**: In consultant sheets (e.g. `REH.1.xlsx`), item descriptions often span 3 to 10 broken lines. `StartRowIndex` marks the first text row, while `AnchorRowIndex` represents the final row containing the quantity, rate, and amount cells.
-2. **Table Start and End Indices**: `TableStartColumnIndex` and `TableEndColumnIndex` allow the exporter to dynamically calculate multi-cell ranges (`C{row}:S{row}`) without hardcoding column numbers for different spreadsheet variants.
-3. **NumberOff Multiplier**: Accounts for model repetitions (e.g., 49 identical villa units in `DP3 - Hatchway.xlsx`).
-
----
 
 ### 1.2 `BoqMatchedPair`
 Represents the matched association between a consultant target item and a contractor source item.
@@ -73,36 +66,54 @@ public sealed record BoqMatchedPair
 }
 ```
 
----
-
-### 1.3 `CurrencyAmount` (Value Object)
-Enforces mathematical safety and prevents currency blending.
+### 1.3 `CurrencyBucketSummary`
+Segregated financial container for a single currency without exchange rate blending.
 
 ```csharp
-public readonly struct CurrencyAmount : IEquatable<CurrencyAmount>
+public sealed record CurrencyBucketSummary
 {
-    public decimal Value { get; }
-    public string Currency { get; }
-
-    public CurrencyAmount(decimal value, string currency);
-    public static CurrencyAmount operator +(CurrencyAmount left, CurrencyAmount right);
-    public static CurrencyAmount operator -(CurrencyAmount left, CurrencyAmount right);
+    public required string Currency { get; init; }
+    public decimal TotalBaseAmount { get; init; }
+    public decimal TotalRemeasureAmount { get; init; }
+    public decimal VarianceAmount => TotalRemeasureAmount - TotalBaseAmount;
+    public double VariancePercentage => TotalBaseAmount == 0m ? 0.0 : (double)(VarianceAmount / TotalBaseAmount) * 100.0;
+    public int ItemsCount { get; init; }
 }
 ```
 
-> [!IMPORTANT]
-> If an addition or subtraction is attempted between two different currencies (e.g., `EGP + USD`), `CurrencyAmount` throws an `InvalidOperationException` immediately. Currency conversion must be explicit and tracked.
+### 1.4 `HistoricalRateItem`
+Rate benchmarking record stored in the local SQLite repository for price history comparisons.
+
+```csharp
+public sealed record HistoricalRateItem
+{
+    public long RevisionId { get; init; }
+    public string InvoiceName { get; init; } = string.Empty;
+    public string ProjectCode { get; init; } = string.Empty;
+    public string SourceFileName { get; init; } = string.Empty;
+    public string TargetFileName { get; init; } = string.Empty;
+    public string ExportFilePath { get; init; } = string.Empty;
+    public DateTime SnapshotDate { get; init; }
+    public string BillNumber { get; init; } = string.Empty;
+    public string ItemCode { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public string Unit { get; init; } = string.Empty;
+    public decimal Quantity { get; init; }
+    public decimal? UnitRate { get; init; }
+    public decimal? TotalAmount { get; init; }
+    public string Currency { get; init; } = "EGP";
+}
+```
 
 ---
 
 ## 2. Enumerations
 
 ### 2.1 `MatchConfidence`
-Defines the certainty level of the reconciliation match:
-* `Exact`: 100% algorithmic certainty. Matched via identical item codes within the same bill/section, or exact normalized description hash.
-* `HighFuzzy`: Similarity score $\ge 0.85$. Minor word permutations or punctuation differences.
-* `ManualReviewNeeded`: Similarity score between $0.70$ and $0.84$. Flagged for engineering approval.
-* `Unmatched`: Score $< 0.70$. Classified as a new scope or Variation Order (VO).
+* `Exact`: 100% algorithmic certainty via identical item code or exact normalized description hash.
+* `HighFuzzy`: Similarity score $\ge 0.85$. High confidence fuzzy vector match.
+* `ManualReviewNeeded`: Similarity score between $0.70$ and $0.84$. Flagged for engineering review.
+* `Unmatched`: Score $< 0.70$. Classified as Variation Order (VO) or unpriced item.
 
 ### 2.2 `BoqItemType`
 * `Normal`: Standard bill line item to be priced.
@@ -110,7 +121,11 @@ Defines the certainty level of the reconciliation match:
 * `RateOnly`: Quantities are zero or unmeasured; only the unit rate applies.
 * `VariationOrder`: Newly added unpriced scope.
 
-### 2.3 `VerificationStatus`
+### 2.3 `BoqFileRole`
+* `ContractorPriced`: Pricing source schedule containing master unit rates.
+* `ConsultantTarget`: Contractual tender schedule into which rates will be reconciled and injected.
+
+### 2.4 `VerificationStatus`
 * `Passed`: Pre-flight verification passed all checks.
 * `Warning`: Minor non-critical schema variances detected.
 * `Failed`: Critical corruption, missing required columns, or invalid workbook structure.

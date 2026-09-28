@@ -1,20 +1,21 @@
 # SmartBOQ Excel Processing Pipeline & Live Linkage Architecture
 
-This document explains the OpenXML, ClosedXML, and Microsoft Excel integration pipelines, including native formula preservation, relative external dynamic linking, and compound union hyperlinks.
+This document explains the OpenXML, ClosedXML, and Microsoft Excel integration pipelines, including template preservation, package sanitization, dynamic external linking, and compound union hyperlinks in **SmartBOQ Enterprise v2.0**.
 
 ---
 
-## 1. Hybrid Exporter Architecture
+## 1. Hybrid Exporter Pipeline
 
-SmartBOQ uses a hybrid export pipeline combining **ClosedXML** (for rapid structured rendering and styling) with direct **System.IO.Compression / OpenXML DOM manipulation** (for relative external formulas and package repair):
+SmartBOQ uses a hybrid export pipeline combining **ClosedXML** (for rapid structured rendering and styling) with direct **System.IO.Compression / OpenXML DOM manipulation** (for relative external formulas, package repair, and relationship wiring):
 
-```
-Step 1: Copy Consultant Template (REH.1.xlsx -> Output.xlsx)
-Step 2: ClosedXML Ingestion & Rate Cell Injections (Column G)
-Step 3: Append "Audit_Report" & "Pricing_Linkage_Map" Worksheets
-Step 4: Save Base Workbook
-Step 5: Low-Level OpenXML Package Transformation (InjectRelativeDynamicLinks)
-Step 6: OpenXML Package Sanitization & Repair Elimination
+```mermaid
+flowchart TD
+    Step1["Step 1: Clone Consultant Binary Template<br/>(File.Copy with overwrite: true)"] --> Step2
+    Step2["Step 2: BaseBoqExporter Package Sanitization<br/>(Strip corrupted definedNames & autoFilters)"] --> Step3
+    Step3["Step 3: ClosedXML Surgical Rate Injection<br/>(Inject values into Column G; Zero format alteration)"] --> Step4
+    Step4["Step 4: Generate Interactive Worksheets<br/>(Audit_Report & Pricing_Linkage_Map)"] --> Step5
+    Step5["Step 5: Low-Level OpenXML Dynamic Link Injection<br/>(Inject externalLink1.xml + relative relationships)"] --> Step6
+    Step6["Step 6: Configure Full Calculation Flags<br/>(fullCalcOnLoad='1' & forceFullCalculation='1')"]
 ```
 
 ---
@@ -22,20 +23,33 @@ Step 6: OpenXML Package Sanitization & Repair Elimination
 ## 2. Template Purity & Formula Integrity
 
 1. **Non-Destructive Overwrites**:
-   * The original 33 sheets of `REH.1.xlsx` are never generated from scratch.
-   * SmartBOQ opens the consultant's original file as a template and modifies only the target rate cells (Column G).
-2. **Formula Preservation in Column H**:
-   * Every consultant worksheet contains native Excel multiplication formulas in Column H (e.g. `=E15*G15`).
-   * SmartBOQ never replaces formulas with static numbers. When the rate in Column G is updated, Excel automatically re-evaluates Column H.
-3. **Tab Colors & Layouts**:
-   * All original fonts, borders, tab colors, and print areas remain 100% intact.
+   - The original sheets of the consultant BOQ are never regenerated or recreated.
+   - SmartBOQ clones the consultant's binary file as a template and modifies only the target rate cells (e.g. Column G).
+2. **Formula Preservation in Total Columns**:
+   - Every consultant worksheet contains native Excel multiplication formulas (e.g. `=E15*G15`).
+   - SmartBOQ never replaces formulas with static numbers. When the rate in Column G is updated, Excel automatically re-evaluates all dependent formulas and summation totals.
+3. **Tab Colors, Layouts & Visuals**:
+   - All original cell fonts, custom borders, tab colors, print areas, header logos, and hidden sheet properties remain 100% untouched.
 
 ---
 
-## 3. Relative Dynamic External Linking Architecture
+## 3. Package Sanitization & Repair Elimination (`BaseBoqExporter`)
+
+Corrupted templates from consultants often cause Excel to throw repair warnings (`Excel found unreadable content...`). SmartBOQ algorithmically sanitizes OpenXML archives prior to saving:
+
+1. **Broken `definedNames` Elimination**:
+   - Scans `xl/workbook.xml` for orphaned defined names pointing to `#REF!` or invalid external paths.
+   - Cleans damaged print area definitions (`_xlnm.Print_Area`) that trigger Excel initialization alerts.
+2. **Corrupted `autoFilter` Remediation**:
+   - Inspects worksheet XML parts (`xl/worksheets/sheet*.xml`).
+   - ClosedXML cannot serialize existing template autoFilter elements and throws `NotSupportedException`. SmartBOQ safely cleans corrupted filter definitions while preserving underlying row data.
+
+---
+
+## 4. Relative Dynamic External Linking Architecture
 
 ### The Client Problem
-When a contractor updates their unit prices in `DP3 - Hatchway.xlsx`, the consultant would previously have to re-export the entire project.
+When a contractor updates their unit prices in their master tender file, the cost engineering team would traditionally have to re-export the entire project.
 
 ### The SmartBOQ Solution
 SmartBOQ creates true **relative external workbook links** in OpenXML so that rate changes in File A automatically cascade into File B when both files reside in the same folder.
@@ -57,7 +71,7 @@ SmartBOQ creates true **relative external workbook links** in OpenXML so that ra
    ```xml
    <Relationship Id="rId1" 
      Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" 
-     Target="DP3%20-%20Hatchway.xlsx" 
+     Target="Contractor_Master_Rates.xlsx" 
      TargetMode="External" />
    ```
 3. **Cell Formula Binding**:
@@ -70,23 +84,31 @@ SmartBOQ creates true **relative external workbook links** in OpenXML so that ra
    ```
    * The initial cached value `<v>37.7</v>` allows File B to be opened independently without prompts.
    * If File A is modified in Excel, opening File B updates the value dynamically.
+4. **Recalculation Enforcement**:
+   To prevent Excel from blocking external references or showing stale numbers:
+   ```xml
+   <calcPr fullCalcOnLoad="1" forceFullCalculation="1" />
+   ```
+   This ensures that all formulas recalculate immediately upon opening without triggering external link warning banners.
 
 ---
 
-## 4. Compound Union Range Hyperlinks
+## 5. Compound Union Range Hyperlinks
 
 ### Engineering Objective
-When an engineer audits a price in the `Pricing_Linkage_Map` or `Audit_Report` and clicks the button, jumping to an isolated number (e.g. `R2`) causes disorientation. The engineer needs to see the **entire row context** (Bill, Section, Description, Quantity) while keeping the focus on the **Net Rate**.
+When an engineer audits a price in the `Pricing_Linkage_Map` or `Audit_Report` and clicks the jump link, jumping to an isolated number causes loss of context. The engineer needs to see the **entire row context** (Bill, Section, Description, Quantity) while keeping the focus directly on the **Net Rate**.
 
 ### Compound SubAddress Syntax
 SmartBOQ uses compound union range references in the Excel `=HYPERLINK` formula:
 
-$$\text{Formula} = \text{=HYPERLINK("DP3 - Hatchway.xlsx\#Sheet1!C}\{\text{row}\}\text{:S}\{\text{row}\}\text{,R}\{\text{row}\}\text{", "[ R}\{\text{row}\}\text{ ] فتح وتحديد السعر والجدول")}$$
+```excel
+=HYPERLINK("Contractor_File.xlsx#Sheet1!C25:S25,R25", "[ R25 ] فتح وتحديد السعر والجدول")
+```
 
 ### Excel Runtime Behavior:
-1. **File Activation**: Excel opens `DP3 - Hatchway.xlsx` and navigates to `Sheet1`.
-2. **Multi-Cell Selection**: Excel selects the rectangular range `C{row}:S{row}`, highlighting the entire engineering item row (Bill name, Section, Item Code, Description, Unit, Quantity, NumberOff, Net Rate, and Net Bill Amount).
-3. **ActiveCell Focus**: Because `R{row}` is the secondary reference in the union string, Excel sets `ActiveCell` directly on `R{row}` (the price cell has the white focus outline and appears in the formula bar).
+1. **File Activation**: Excel opens the contractor file and navigates to the exact sheet.
+2. **Multi-Cell Selection**: Excel selects the rectangular range `C25:S25`, highlighting the entire engineering item row.
+3. **ActiveCell Focus**: Because `R25` is the secondary reference in the union string, Excel sets `ActiveCell` directly on `R25` (the price cell has the active focus outline and appears in the formula bar).
 
 ```
    Col C    Col D      Col K     Col L            Col N   Col O   Col R      Col S
@@ -94,41 +116,14 @@ $$\text{Formula} = \text{=HYPERLINK("DP3 - Hatchway.xlsx\#Sheet1!C}\{\text{row}\
 | Bill 2 | Section | Code "A" | Description.. |  m2   |  351  | [ 37.7 ] | 648,402  |  <- Entire row selected
 +--------+---------+----------+---------------+-------+-------+----------+----------+
                                                                    ▲
-                                                        ActiveCell Focus (R{row})
+                                                        ActiveCell Focus (R25)
 ```
 
 ---
 
-## 5. Audit & Analytics Worksheets
+## 6. Safety Limits & Capacity Caps
 
-### 5.1 `Pricing_Linkage_Map`
-* Dedicated cross-workbook navigation and traceability matrix.
-* Columns:
-  1. `انتقال للمقايسة`: Jumps directly to the item row in the tender schedule.
-  2. `فتح وتحديد سعر المقاول`: Compound union link to contractor file (`C{row}:S{row},R{row}`).
-  3. `Tender Sheet / Bill`
-  4. `Tender Row`
-  5. `Tender Code`
-  6. `Tender Description`
-  7. `Unit`
-  8. `Quantity`
-  9. `Contractor File`
-  10. `Contractor Sheet`
-  11. `Contractor Row`
-  12. `Contractor Cell`: Clickable link to contractor cell.
-  13. `Contractor Code`
-  14. `Contractor Description`
-  15. `Unit Rate (EGP)`
-  16. `Match Algorithm & Confidence`
-
-### 5.2 `Audit_Report`
-* Technical audit trail containing summary KPI scorecards:
-  * Total Items Reconciled
-  * Exact Matches (100%)
-  * Shielded Provisional Sums (PS)
-  * New Scope / Variation Orders (VO)
-* Segregated variance analysis by currency.
-
-### 5.3 Standalone Executive Dashboard (`DP3_Executive_Dashboard.xlsx`)
-* Exported independently via `ExcelDashboardBuilder` for senior executive and commercial presentation.
-* Contains KPI scorecards, sheet-by-sheet financial distributions, high-variance alarms, and full traceability tables.
+* **Maximum Worksheet Rows**: Excel hard limit is $1,048,576$ rows. SmartBOQ enforces a safety cap (`const int maxExcelSheetRows = 1_048_500;`) to prevent generating corrupted worksheets.
+* **Large Dataset Handling**:
+  - Up to 1,000,000 cells: instantaneous export (< 25 seconds).
+  - 1,000,000 to 5,000,000 cells: 1 to 2.5 minutes, protected by 64-bit address space.
