@@ -7,6 +7,7 @@ using System.Xml.Linq;
 using ClosedXML.Excel;
 using SmartBOQ.Domain.Enums;
 using SmartBOQ.Domain.Models;
+using SmartBOQ.Infrastructure.Common;
 
 namespace SmartBOQ.Infrastructure.Export;
 
@@ -43,10 +44,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         ArgumentException.ThrowIfNullOrWhiteSpace(outputFilePath);
         ArgumentNullException.ThrowIfNull(matchedPairs);
 
-        if (!File.Exists(templateFilePath))
-        {
-            throw new FileNotFoundException("Consultant template file not found.", templateFilePath);
-        }
+        FileAccessValidator.EnsureFileReadable(templateFilePath, "ملف مقايسة الاستشاري");
+        FileAccessValidator.EnsureFileWritable(outputFilePath, "ملف المقايسة المسعرة الناتج");
 
         string? targetDir = Path.GetDirectoryName(outputFilePath);
         if (!string.IsNullOrEmpty(targetDir))

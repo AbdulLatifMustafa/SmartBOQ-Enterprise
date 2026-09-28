@@ -20,11 +20,22 @@ using SmartBOQ.Infrastructure.Verification;
 
 namespace SmartBOQ.App.ViewModels;
 
-public sealed partial class MainViewModel : ViewModelBase
+public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordinator
 {
     private readonly BoqReconciliationService _service;
     private readonly ILocalizationService _loc;
     private readonly IBoqInspector _inspector;
+
+    public BoqReconciliationService Service => _service;
+    public ILocalizationService Localization => _loc;
+    public IBoqInspector Inspector => _inspector;
+    public string DatabaseFilePath { get; }
+
+    public ComparePipelineViewModel Compare { get; }
+    public PricingTableViewModel Pricing { get; }
+    public HistoricalRatesViewModel Historical { get; }
+    public ProjectSummaryViewModel Summary { get; }
+    public ExportFileViewModel Export { get; }
 
     private string _fileAPath = string.Empty;
     private string _fileBPath = string.Empty;
@@ -132,6 +143,13 @@ public sealed partial class MainViewModel : ViewModelBase
             _inspector
         );
 
+        // Instantiate Specialized Child ViewModels via OOP Coordination
+        Compare = new ComparePipelineViewModel(this);
+        Pricing = new PricingTableViewModel(this);
+        Historical = new HistoricalRatesViewModel(this);
+        Summary = new ProjectSummaryViewModel(this);
+        Export = new ExportFileViewModel(this);
+
         FilteredItems = CollectionViewSource.GetDefaultView(PagedItems);
 
         // Pre-initialize SQLite schema and ensure migrations run immediately on startup
@@ -204,6 +222,43 @@ public sealed partial class MainViewModel : ViewModelBase
         // Auto-detect default workspace files and trigger inspection
         InitializeDefaultFiles();
     }
+
+    #region IMainViewModelCoordinator Implementation
+
+    public void SetStatus(string message, int progress = -1)
+    {
+        StatusMessage = message;
+        if (progress >= 0)
+        {
+            ProgressPercentage = progress;
+        }
+    }
+
+    public void SetBusy(bool isBusy)
+    {
+        IsLoading = isBusy;
+    }
+
+    public async Task ExecuteWithBusyIndicatorAsync(Func<Task> action, string initialStatus = "Processing...")
+    {
+        IsLoading = true;
+        StatusMessage = initialStatus;
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"خطأ: {ex.Message}";
+            MessageBox.Show(ex.Message, "تنبيه", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    #endregion
 
     #region Properties
 
@@ -743,7 +798,6 @@ public sealed partial class MainViewModel : ViewModelBase
     public RelayCommand OpenSheetLocationCommand { get; }
     public RelayCommand OpenLinkedSheetLocationCommand { get; }
     public RelayCommand OpenLinkedSourceSheetLocationCommand { get; }
-    public string DatabaseFilePath { get; } = string.Empty;
     public RelayCommand OpenMatchedSourceLocationCommand { get; }
     public RelayCommand OpenMatchedTargetLocationCommand { get; }
     public RelayCommand OpenHistoricalItemLocationCommand { get; }

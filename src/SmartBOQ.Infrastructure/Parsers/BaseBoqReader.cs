@@ -79,20 +79,84 @@ public abstract class BaseBoqReader : IBoqReader
 
     /// <summary>
     /// Parses any numeric or string object into a high-precision decimal.
+    /// Resiliently handles Eastern Arabic numerals (٠-٩), Persian digits (۰-۹), currency codes/symbols,
+    /// European comma decimal formats, and Excel formula error tokens (#VALUE!, #N/A, -).
     /// </summary>
-    protected static decimal ParseDecimal(object? val)
+    public static decimal ParseDecimal(object? val)
     {
         if (val == null) return 0m;
-        if (val is double d) return Convert.ToDecimal(d);
+        if (val is double d) return double.IsNaN(d) || double.IsInfinity(d) ? 0m : Convert.ToDecimal(d);
         if (val is decimal dec) return dec;
         if (val is int i) return i;
         if (val is long l) return l;
+        if (val is float f) return float.IsNaN(f) || float.IsInfinity(f) ? 0m : Convert.ToDecimal(f);
 
         string s = val.ToString()?.Trim() ?? string.Empty;
-        if (decimal.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var result))
+        if (string.IsNullOrWhiteSpace(s)) return 0m;
+
+        // Skip Excel error formulas and non-numeric indicators
+        if (s.StartsWith("#", StringComparison.Ordinal) ||
+            s.Equals("-", StringComparison.Ordinal) ||
+            s.Equals("nil", StringComparison.OrdinalIgnoreCase) ||
+            s.Equals("null", StringComparison.OrdinalIgnoreCase) ||
+            s.Contains("rate only", StringComparison.OrdinalIgnoreCase) ||
+            s.Contains("سعر فقط", StringComparison.OrdinalIgnoreCase) ||
+            s.Contains("محمل", StringComparison.OrdinalIgnoreCase) ||
+            s.Contains("included", StringComparison.OrdinalIgnoreCase))
         {
-            return result;
+            return 0m;
         }
+
+        // Smart Normalization: convert Eastern Arabic / Persian numerals and strip currency artifacts
+        var sb = new StringBuilder(s.Length);
+        foreach (char ch in s)
+        {
+            if (ch >= '٠' && ch <= '٩')
+            {
+                sb.Append((char)('0' + (ch - '٠')));
+            }
+            else if (ch >= '۰' && ch <= '۹')
+            {
+                sb.Append((char)('0' + (ch - '۰')));
+            }
+            else if (ch is not '$' and not '€' and not '£' and not '¥' and not '%')
+            {
+                sb.Append(ch);
+            }
+        }
+
+        string cleaned = sb.ToString()
+            .Replace("EGP", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("USD", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("EUR", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("LE", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("L.E.", "", StringComparison.OrdinalIgnoreCase)
+            .Replace("ج.م", "")
+            .Replace("ريال", "")
+            .Replace("درهم", "")
+            .Trim();
+
+        // Smart Comma vs Decimal Separator Resolver
+        int commaIdx = cleaned.IndexOf(',');
+        int periodIdx = cleaned.IndexOf('.');
+
+        if (commaIdx >= 0 && periodIdx < 0)
+        {
+            int commaCount = cleaned.Count(c => c == ',');
+            int digitsAfterComma = cleaned.Length - commaIdx - 1;
+
+            // If single comma and not a standard 3-digit thousand chunk (e.g. 125,50 or 0,5 or 12,5) -> European decimal format
+            if (commaCount == 1 && (digitsAfterComma != 3 || cleaned.StartsWith("0")))
+            {
+                cleaned = cleaned.Replace(',', '.');
+            }
+        }
+
+        if (decimal.TryParse(cleaned, NumberStyles.Any, CultureInfo.InvariantCulture, out var normResult))
+        {
+            return normResult;
+        }
+
         return 0m;
     }
 
