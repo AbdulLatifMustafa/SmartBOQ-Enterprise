@@ -379,4 +379,31 @@ public class ArchitectureAndPersistenceTests
         Assert.Contains("USD", content);
         Assert.Contains("SUCCESS", content);
     }
+
+    [Fact]
+    public void AllXamlPackIconLucideKinds_AreValidEnumMembers()
+    {
+        string solutionDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        string appDir = Path.Combine(solutionDir, "src", "SmartBOQ.App");
+        if (!Directory.Exists(appDir)) return;
+
+        var xamlFiles = Directory.GetFiles(appDir, "*.xaml", SearchOption.AllDirectories);
+        var iconRegex = new System.Text.RegularExpressions.Regex(@"PackIconLucide\s+[^>]*?Kind=[""']([A-Za-z0-9_]+)[""']", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        var invalidList = new List<string>();
+        foreach (var file in xamlFiles)
+        {
+            string content = File.ReadAllText(file);
+            foreach (System.Text.RegularExpressions.Match match in iconRegex.Matches(content))
+            {
+                string iconName = match.Groups[1].Value;
+                if (!Enum.TryParse(typeof(MahApps.Metro.IconPacks.PackIconLucideKind), iconName, ignoreCase: false, out _))
+                {
+                    invalidList.Add($"{Path.GetFileName(file)}: '{iconName}'");
+                }
+            }
+        }
+
+        Assert.Empty(invalidList);
+    }
 }

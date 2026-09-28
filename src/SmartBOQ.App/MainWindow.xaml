@@ -103,7 +103,7 @@
                             Background="#3A1C1C" Foreground="{DynamicResource BrushDanger}" BorderBrush="{DynamicResource BrushDanger}"
                             BorderThickness="1" Padding="8,3" Margin="0,0,12,0" Cursor="Hand" ToolTip="إلغاء العملية الحالية">
                         <StackPanel Orientation="Horizontal">
-                            <iconPacks:PackIconLucide Kind="XCircle" Width="13" Height="13" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                            <iconPacks:PackIconLucide Kind="CircleX" Width="13" Height="13" Margin="0,0,4,0" VerticalAlignment="Center"/>
                             <TextBlock Text="إلغاء المعالجة" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
