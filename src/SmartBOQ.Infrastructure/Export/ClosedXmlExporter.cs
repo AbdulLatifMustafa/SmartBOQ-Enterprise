@@ -105,15 +105,15 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                         int rateCol = pair.TargetItem.RateColumnIndex > 0 ? pair.TargetItem.RateColumnIndex : 7;
                         var rateCell = ws.Cell(anchorRow, rateCol);
 
-                        if (rateCell.HasFormula)
-                        {
-                            continue;
-                        }
-
                         if (pair.IsApproved && pair.InjectedRate.HasValue)
                         {
-                            // Write numeric rate value without modifying formatting
+                            // Write numeric rate value (overwrites any obsolete external template formula while preserving cell style)
                             rateCell.Value = (double)pair.InjectedRate.Value;
+                        }
+                        else if (rateCell.HasFormula)
+                        {
+                            // Preserve template formula only for unpriced / unapproved items
+                            continue;
                         }
                         else if (pair.TargetItem.OriginalRate.HasValue)
                         {
@@ -337,7 +337,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
             int rateCol = item.RateColumnIndex > 0 ? item.RateColumnIndex : 7;
             string rateColLetter = XLHelper.GetColumnLetterFromNumber(rateCol);
-            string safeSheet = item.BillNumber.Replace("'", "''");
+            string targetSheetName = !string.IsNullOrWhiteSpace(item.SheetName) ? item.SheetName : item.BillNumber;
+            string safeSheet = targetSheetName.Replace("'", "''");
             string targetCellRef = $"'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
 
             // Col 1: Tender Schedule jump link
@@ -367,20 +368,23 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             var srcJumpCell = ws.Cell(rowIdx, 2);
             if (srcItem != null && srcItem.AnchorRowIndex > 0)
             {
+                string itemContractorFile = !string.IsNullOrWhiteSpace(srcItem.WorkbookName)
+                    ? Path.GetFileName(srcItem.WorkbookName)
+                    : contractorFileName;
+                if (itemContractorFile.StartsWith("[Source_Priced]_", StringComparison.OrdinalIgnoreCase))
+                {
+                    itemContractorFile = itemContractorFile.Substring("[Source_Priced]_".Length);
+                }
+
                 string rawSrcSheet = string.IsNullOrWhiteSpace(srcItem.SheetName) ? "Sheet1" : srcItem.SheetName;
-                string safeSrcSheet = rawSrcSheet.Contains(' ') ? $"'{rawSrcSheet.Replace("'", "''")}'" : rawSrcSheet.Replace("'", "''");
+                string safeSrcSheet = $"'{rawSrcSheet.Replace("'", "''")}'";
                 int srcColIdx = srcItem.RateColumnIndex > 0 ? srcItem.RateColumnIndex : 18;
                 string srcColLetter = XLHelper.GetColumnLetterFromNumber(srcColIdx);
                 int srcRow = srcItem.AnchorRowIndex;
 
-                int tblStart = srcItem.TableStartColumnIndex > 0 ? srcItem.TableStartColumnIndex : 3;
-                int tblEnd = srcItem.TableEndColumnIndex > 0 ? srcItem.TableEndColumnIndex : Math.Max(srcColIdx + 1, 19);
-                string tblStartLetter = XLHelper.GetColumnLetterFromNumber(tblStart);
-                string tblEndLetter = XLHelper.GetColumnLetterFromNumber(tblEnd);
-
                 // Accurate direct jump to the exact Net Rate cell in the contractor file
                 string cellCoord = $"{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}";
-                string srcRef = $"{contractorFileName}#{safeSrcSheet}!{cellCoord}";
+                string srcRef = $"{itemContractorFile}#{safeSrcSheet}!{cellCoord}";
                 srcJumpCell.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"[ {srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)} ] عرض سعر المقاول\")";
                 srcJumpCell.Style.Font.Bold = true;
                 srcJumpCell.Style.Font.Underline = XLFontUnderlineValues.Single;
@@ -395,7 +399,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
             // Col 3: Sheet / Bill (Also Clickable)
             var sheetCell = ws.Cell(rowIdx, 3);
-            sheetCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{item.BillNumber}\")";
+            sheetCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{targetSheetName}\")";
             sheetCell.Style.Font.Underline = XLFontUnderlineValues.Single;
             sheetCell.Style.Font.FontColor = isPriced ? XLColor.FromHtml("#0F172A") : XLColor.FromHtml("#475569");
             sheetCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
@@ -656,7 +660,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
             int rateCol = item.RateColumnIndex > 0 ? item.RateColumnIndex : 7;
             string rateColLetter = XLHelper.GetColumnLetterFromNumber(rateCol);
-            string safeSheet = item.BillNumber.Replace("'", "''");
+            string targetSheetName = !string.IsNullOrWhiteSpace(item.SheetName) ? item.SheetName : item.BillNumber;
+            string safeSheet = targetSheetName.Replace("'", "''");
             string targetCellRef = $"'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
 
             // Col 1: Jump to Tender Schedule (English Digits)
@@ -676,23 +681,25 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
             // Col 2: Contractor source record link
             var srcJump = ws.Cell(rowIdx, 2);
+            string itemContractorFile = !string.IsNullOrWhiteSpace(srcItem?.WorkbookName) 
+                ? Path.GetFileName(srcItem.WorkbookName) 
+                : contractorFileName;
+            if (itemContractorFile.StartsWith("[Source_Priced]_", StringComparison.OrdinalIgnoreCase))
+            {
+                itemContractorFile = itemContractorFile.Substring("[Source_Priced]_".Length);
+            }
+
             if (isLinked)
             {
                 string rawSrcSheet = string.IsNullOrWhiteSpace(srcItem!.SheetName) ? "Sheet1" : srcItem.SheetName;
-                string safeSrcSheet = rawSrcSheet.Contains(' ') ? $"'{rawSrcSheet.Replace("'", "''")}'" : rawSrcSheet.Replace("'", "''");
+                string safeSrcSheet = $"'{rawSrcSheet.Replace("'", "''")}'";
                 int srcColIdx = srcItem.RateColumnIndex > 0 ? srcItem.RateColumnIndex : 18;
                 string srcColLetter = XLHelper.GetColumnLetterFromNumber(srcColIdx);
                 int srcRow = srcItem.AnchorRowIndex;
 
-                int tblStart = srcItem.TableStartColumnIndex > 0 ? srcItem.TableStartColumnIndex : 3;
-                int tblEnd = srcItem.TableEndColumnIndex > 0 ? srcItem.TableEndColumnIndex : Math.Max(srcColIdx + 1, 19);
-                string tblStartLetter = XLHelper.GetColumnLetterFromNumber(tblStart);
-                string tblEndLetter = XLHelper.GetColumnLetterFromNumber(tblEnd);
-
-                // Target table row record and rate cell
-                string smartRange = $"{tblStartLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}:{tblEndLetter}{srcRow.ToString(CultureInfo.InvariantCulture)},{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}";
-                string srcRef = $"{contractorFileName}#{safeSrcSheet}!{smartRange}";
-                srcJump.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"[ {srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)} ] فتح وتحديد السعر والجدول\")";
+                // Accurate direct jump to the exact single rate cell in contractor workbook
+                string srcRef = $"{itemContractorFile}#{safeSrcSheet}!{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}";
+                srcJump.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"[ {srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)} ] فتح وتحديد سعر المقاول\")";
                 srcJump.Style.Font.Bold = true;
                 srcJump.Style.Font.Underline = XLFontUnderlineValues.Single;
                 srcJump.Style.Font.FontColor = XLColor.FromHtml("#16A34A"); // Emerald green
@@ -708,13 +715,13 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             var sheetCell = ws.Cell(rowIdx, 3);
             if (item.AnchorRowIndex > 0)
             {
-                sheetCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{item.BillNumber}\")";
+                sheetCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{targetSheetName}\")";
                 sheetCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 sheetCell.Style.Font.FontColor = XLColor.FromHtml("#0F172A");
             }
             else
             {
-                sheetCell.Value = item.BillNumber;
+                sheetCell.Value = targetSheetName;
             }
             sheetCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
 
@@ -761,7 +768,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             mapQtyCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
             // Col 9: Contractor File
-            ws.Cell(rowIdx, 9).Value = contractorFileName;
+            ws.Cell(rowIdx, 9).Value = isLinked ? itemContractorFile : "-";
             ws.Cell(rowIdx, 9).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
             // Col 10: Contractor Sheet
@@ -777,19 +784,12 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             if (isLinked)
             {
                 string rawSrcSheet = string.IsNullOrWhiteSpace(srcItem!.SheetName) ? "Sheet1" : srcItem.SheetName;
-                string safeSrcSheet = rawSrcSheet.Contains(' ') ? $"'{rawSrcSheet.Replace("'", "''")}'" : rawSrcSheet.Replace("'", "''");
+                string safeSrcSheet = $"'{rawSrcSheet.Replace("'", "''")}'";
                 int srcColIdx = srcItem.RateColumnIndex > 0 ? srcItem.RateColumnIndex : 18;
                 string srcColLetter = XLHelper.GetColumnLetterFromNumber(srcColIdx);
                 int srcRow = srcItem.AnchorRowIndex;
 
-                int tblStart = srcItem.TableStartColumnIndex > 0 ? srcItem.TableStartColumnIndex : 3;
-                int tblEnd = srcItem.TableEndColumnIndex > 0 ? srcItem.TableEndColumnIndex : Math.Max(srcColIdx + 1, 19);
-                string tblStartLetter = XLHelper.GetColumnLetterFromNumber(tblStart);
-                string tblEndLetter = XLHelper.GetColumnLetterFromNumber(tblEnd);
-
-                // Target table row record and rate cell
-                string smartRange = $"{tblStartLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}:{tblEndLetter}{srcRow.ToString(CultureInfo.InvariantCulture)},{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}";
-                string srcRef = $"{contractorFileName}#{safeSrcSheet}!{smartRange}";
+                string srcRef = $"{itemContractorFile}#{safeSrcSheet}!{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}";
                 cellRefCell.FormulaA1 = $"=HYPERLINK(\"{srcRef}\", \"{srcColLetter}{srcRow.ToString(CultureInfo.InvariantCulture)}\")";
                 cellRefCell.Style.Font.Bold = true;
                 cellRefCell.Style.Font.Underline = XLFontUnderlineValues.Single;

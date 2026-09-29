@@ -85,7 +85,7 @@
                         <StackPanel>
                             <TextBlock Text="• الحفاظ بنسبة 100% على تنسيق وألوان وقوالب الاستشاري دون أي تغيير (33 ورقة عمل)." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
                             <TextBlock Text="• حقن الفئات في العمود G مما يفعل معادلات Excel الأصلية في العمود H تلقائياً." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
-                            <TextBlock Text="• نسخ ملفات الأسعار الأصلية ([Source_Priced]) تلقائياً بجانب المقايسات لسهولة المقارنة والمراجعة المباشرة." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
+                            <TextBlock Text="• نسخ ملفات الأسعار الأصلية بأسمائها الكاملة تلقائياً بجانب المقايسات لسهولة المقارنة والربط المباشر." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
                             <TextBlock Text="• إنشاء ورقة (Audit_Report): توثق كافة البنود المحقونة ونسب التطابق مع معادلات الربط الحي بالخلايا." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
                             <TextBlock Text="• إنشاء ورقة (Pricing_Linkage_Map): خريطة ربط الأسعار التفاعلية بالربط الديناميكي النسبي بملف المقاول." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
                             <TextBlock Text="• إنشاء ملف مستقل (DP3_Executive_Dashboard.xlsx): لوحة مؤشرات الإدارة والرسوم البيانية وفروق الأسعار." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>

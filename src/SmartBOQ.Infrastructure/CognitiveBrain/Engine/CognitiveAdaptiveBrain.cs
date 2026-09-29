@@ -226,6 +226,14 @@ public sealed class CognitiveAdaptiveBrain : IItemMatcher
     /// </summary>
     private double EvaluateCandidateScore(ItemContentSignature target, IndexedMetricItem source, CognitiveScoringProfile profile)
     {
+        // 0. Contractual Action Scope Exclusivity (e.g. Supply vs Install)
+        if (SmartBOQ.Domain.Analysis.ContractualScopeClassifier.AreScopesMutuallyExclusive(target.Scope, source.Scope))
+        {
+            return 0.0; // Strictly reject cross-scope matches
+        }
+
+        double scopeMultiplier = SmartBOQ.Domain.Analysis.ContractualScopeClassifier.GetScopeCompatibilityMultiplier(target.Scope, source.Scope);
+
         double codeScore = 0.0;
         if (!string.IsNullOrEmpty(target.NormalizedCode) && !string.IsNullOrEmpty(source.NormalizedCode))
         {
@@ -278,6 +286,8 @@ public sealed class CognitiveAdaptiveBrain : IItemMatcher
         {
             totalScore += 0.20;
         }
+
+        totalScore *= scopeMultiplier;
 
         return Math.Min(1.0, totalScore);
     }

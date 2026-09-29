@@ -1,3 +1,4 @@
+using SmartBOQ.Domain.Enums;
 using SmartBOQ.Domain.Models;
 using SmartBOQ.Infrastructure.CognitiveBrain.Currencies;
 using SmartBOQ.Infrastructure.CognitiveBrain.DataStructures;
@@ -18,6 +19,7 @@ public sealed class ItemContentSignature
     public decimal Quantity { get; }
     public decimal? Rate { get; }
     public decimal? Amount { get; }
+    public ContractualActionScope Scope { get; }
     public ulong FastPathHash { get; }
 
     public ItemContentSignature(BoqItem item, MultiCurrencyCognitiveArbitrator arbitrator)
@@ -32,11 +34,14 @@ public sealed class ItemContentSignature
         Rate = item.UnitRate ?? item.OriginalRate;
         Amount = item.TotalAmount;
 
-        // Composite 64-bit fast-path hash: allows instant O(1) match if tokens + qty + unit align
-        FastPathHash = ComputeFastPathHash(NormalizedCode, Tokens.BloomFilter, Quantity, Dimension);
+        string scopeText = $"{desc} {item.SectionName} {item.HierarchyPath}";
+        Scope = SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope(scopeText);
+
+        // Composite 64-bit fast-path hash: allows instant O(1) match if tokens + qty + unit + contractual scope align
+        FastPathHash = ComputeFastPathHash(NormalizedCode, Tokens.BloomFilter, Quantity, Dimension, Scope);
     }
 
-    private static ulong ComputeFastPathHash(string code, ulong bloom, decimal qty, DimensionClass dim)
+    private static ulong ComputeFastPathHash(string code, ulong bloom, decimal qty, DimensionClass dim, ContractualActionScope scope)
     {
         ulong h = bloom;
         if (!string.IsNullOrEmpty(code))
@@ -44,6 +49,7 @@ public sealed class ItemContentSignature
             h ^= CognitiveTokenSet.ComputeHash64(code.AsSpan());
         }
         h ^= (ulong)dim * 1000003UL;
+        h ^= (ulong)scope * 5000011UL;
         long qBits = decimal.ToOACurrency(qty);
         h ^= (ulong)qBits;
         return h;

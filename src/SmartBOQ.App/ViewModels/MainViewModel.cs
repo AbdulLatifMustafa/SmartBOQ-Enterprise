@@ -1406,12 +1406,15 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             {
                 if (File.Exists(sPath))
                 {
-                    string srcCopyName = $"[Source_Priced]_{Path.GetFileName(sPath)}";
+                    string srcCopyName = Path.GetFileName(sPath);
                     string srcCopyDest = Path.Combine(outDir, srcCopyName);
                     try
                     {
-                        File.Copy(sPath, srcCopyDest, overwrite: true);
-                        copiedSources.Add(srcCopyName);
+                        if (!string.Equals(Path.GetFullPath(sPath), Path.GetFullPath(srcCopyDest), StringComparison.OrdinalIgnoreCase))
+                        {
+                            File.Copy(sPath, srcCopyDest, overwrite: true);
+                            copiedSources.Add(srcCopyName);
+                        }
                     }
                     catch { /* non-fatal */ }
                 }
@@ -1675,12 +1678,15 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             {
                 if (File.Exists(sPath))
                 {
-                    string srcCopyName = $"[Source_Priced]_{Path.GetFileName(sPath)}";
+                    string srcCopyName = Path.GetFileName(sPath);
                     string srcCopyDest = Path.Combine(targetExportFolder, srcCopyName);
                     try
                     {
-                        File.Copy(sPath, srcCopyDest, overwrite: true);
-                        copiedSourcesList.Add(srcCopyName);
+                        if (!string.Equals(Path.GetFullPath(sPath), Path.GetFullPath(srcCopyDest), StringComparison.OrdinalIgnoreCase))
+                        {
+                            File.Copy(sPath, srcCopyDest, overwrite: true);
+                            copiedSourcesList.Add(srcCopyName);
+                        }
                     }
                     catch { /* non-fatal */ }
                 }
@@ -1699,7 +1705,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             sbReport.AppendLine($"Total Priced Items: {allCombinedPairs.Count(p => (p.InjectedRate > 0 && !p.IsProvisionalSum) || (p.IsApproved && p.Confidence != MatchConfidence.Unmatched && !p.IsVariationOrder)):N0}");
             sbReport.AppendLine();
             sbReport.AppendLine("PRICING SOURCE FILES (Copied to this folder for direct audit & comparison):");
-            foreach (var s in sourceFiles) sbReport.AppendLine($" • [Source_Priced]_{Path.GetFileName(s)} (Original: {s})");
+            foreach (var s in sourceFiles) sbReport.AppendLine($" • {Path.GetFileName(s)} (Original: {s})");
             sbReport.AppendLine();
             sbReport.AppendLine("SCHEDULES BREAKDOWN:");
             foreach (var w in exportedWorkbooks)
@@ -1747,7 +1753,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 ? $"• ({targetFiles.Count}) ملفات مقايسات إكسيل مسعرة بالكامل بنسبة 100% حفاظ على المعادلات." 
                 : $"• ({targetFiles.Count}) fully priced consultant Excel workbooks.");
             sbSuccess.AppendLine(IsArabic 
-                ? $"• ({sourceFiles.Count}) ملفات الأسعار الأصلية المسحوب منها الفئات ([Source_Priced]) للمقارنة الفورية." 
+                ? $"• ({sourceFiles.Count}) ملفات الأسعار الأصلية المسحوب منها الفئات للمقارنة الفورية والربط التلقائي المباشر." 
                 : $"• ({sourceFiles.Count}) source priced workbooks copied for direct side-by-side comparison.");
             sbSuccess.AppendLine(IsArabic 
                 ? "• ملف لوحة المؤشرات الشاملة (Master_Executive_Commercial_Dashboard.xlsx)." 
@@ -1976,11 +1982,11 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 try
                 {
                     string srcName = Path.GetFileName(srcPath);
-                    string copyDest = Path.Combine(outDir, $"[Source_Priced]_{srcName}");
-                    if (!string.Equals(srcPath, copyDest, StringComparison.OrdinalIgnoreCase))
+                    string copyDest = Path.Combine(outDir, srcName);
+                    if (!string.Equals(Path.GetFullPath(srcPath), Path.GetFullPath(copyDest), StringComparison.OrdinalIgnoreCase))
                     {
                         File.Copy(srcPath, copyDest, overwrite: true);
-                        copiedSources.Add(Path.GetFileName(copyDest));
+                        copiedSources.Add(srcName);
                     }
                 }
                 catch { /* non-fatal */ }

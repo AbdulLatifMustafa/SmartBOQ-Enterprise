@@ -70,3 +70,26 @@ public enum VerificationStatus
     FailedCorrupted = 3
 }
 
+/// <summary>
+/// Contractual action scope classification (e.g. Supply Only, Installation Only, Supply & Install, Dismantle).
+/// Used by cognitive and hybrid matching engines to enforce strict scope exclusivity.
+/// </summary>
+public enum ContractualActionScope
+{
+    /// <summary>Unspecified or generic scope.</summary>
+    Generic = 0,
+
+    /// <summary>Supply / materials / equipment only (توريد فقط).</summary>
+    SupplyOnly = 1,
+
+    /// <summary>Installation / erection / labor only (تركيب / مصنعية فقط).</summary>
+    InstallOnly = 2,
+
+    /// <summary>Comprehensive supply and installation (توريد وتركيب).</summary>
+    SupplyAndInstall = 3,
+
+    /// <summary>Demolition, dismantling, removal, or salvage (فك وإزالة وتكسير).</summary>
+    Dismantle = 4
+}
+
+

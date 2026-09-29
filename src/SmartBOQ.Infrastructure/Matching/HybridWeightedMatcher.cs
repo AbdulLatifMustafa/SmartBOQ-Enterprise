@@ -396,6 +396,19 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
         Levenshtein? levTargetLine,
         double sensitivity)
     {
+        // 0. Contractual Action Scope Exclusivity (Supply vs Install)
+        string targetScopeText = $"{target.Description} {target.LineItemText} {target.SectionName} {target.HierarchyPath}";
+        string candScopeText = $"{candidate.Item.Description} {candidate.Item.LineItemText} {candidate.Item.SectionName} {candidate.Item.HierarchyPath}";
+        var targetScope = SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope(targetScopeText);
+        var candScope = SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope(candScopeText);
+
+        if (SmartBOQ.Domain.Analysis.ContractualScopeClassifier.AreScopesMutuallyExclusive(targetScope, candScope))
+        {
+            return null; // Mutually exclusive contractual scopes (e.g. Supply vs Install)
+        }
+
+        double scopeMultiplier = SmartBOQ.Domain.Analysis.ContractualScopeClassifier.GetScopeCompatibilityMultiplier(targetScope, candScope);
+
         // 1. Unit Compatibility
         bool unitExact = string.Equals(target.Unit, candidate.Item.Unit, StringComparison.OrdinalIgnoreCase);
         bool unitCompatible = unitExact || AreUnitsCompatible(target.Unit, candidate.Item.Unit);
@@ -573,6 +586,9 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
             finalScore = textSim;
             isApproved = false;
         }
+
+        fitness *= scopeMultiplier;
+        finalScore = Math.Min(1.0, finalScore * scopeMultiplier);
 
         return new ScoredCandidate(
             candidate.Item,

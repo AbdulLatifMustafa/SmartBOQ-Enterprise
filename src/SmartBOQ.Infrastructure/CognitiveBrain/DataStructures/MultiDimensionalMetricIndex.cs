@@ -13,6 +13,7 @@ public sealed class IndexedMetricItem
     public int GlobalIndex { get; init; }
     public CognitiveTokenSet TokenSet { get; init; }
     public DimensionClass UnitDimension { get; init; }
+    public SmartBOQ.Domain.Enums.ContractualActionScope Scope { get; init; }
     public string NormalizedCode { get; init; } = string.Empty;
     public decimal NormalizedRate { get; init; }
 }
@@ -44,12 +45,16 @@ public sealed class MultiDimensionalMetricIndex
             string normCode = CleanCode(src.ItemCode);
             decimal rate = src.UnitRate ?? (src.OriginalRate ?? 0m);
 
+            string scopeText = $"{desc} {src.SectionName} {src.HierarchyPath}";
+            var scope = SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope(scopeText);
+
             var indexed = new IndexedMetricItem
             {
                 Item = src,
                 GlobalIndex = i,
                 TokenSet = tokens,
                 UnitDimension = dim,
+                Scope = scope,
                 NormalizedCode = normCode,
                 NormalizedRate = rate
             };

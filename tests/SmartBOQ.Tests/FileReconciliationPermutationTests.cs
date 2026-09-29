@@ -466,7 +466,7 @@ public class FileReconciliationPermutationTests : IDisposable
         }
 
         // Copy source priced file alongside output files for direct side-by-side comparison
-        File.Copy(srcFile, Path.Combine(stagingDir, $"[Source_Priced]_{Path.GetFileName(srcFile)}"), overwrite: true);
+        File.Copy(srcFile, Path.Combine(stagingDir, Path.GetFileName(srcFile)), overwrite: true);
 
         // Add summary audit txt and dashboard
         File.WriteAllText(Path.Combine(stagingDir, "Reconciliation_Audit_Summary.txt"), "Audit complete: 2 packages processed.");
@@ -480,12 +480,12 @@ public class FileReconciliationPermutationTests : IDisposable
         System.IO.Compression.ZipFile.CreateFromDirectory(stagingDir, zipOut, System.IO.Compression.CompressionLevel.Optimal, false);
         Assert.True(File.Exists(zipOut));
 
-        // Verify ZIP contents (including [Source_Priced] file!)
+        // Verify ZIP contents (including original source file!)
         using var zipArchive = System.IO.Compression.ZipFile.OpenRead(zipOut);
         Assert.Equal(5, zipArchive.Entries.Count);
         Assert.Contains(zipArchive.Entries, e => e.Name == "Reconciled_01_Arch.xlsx");
         Assert.Contains(zipArchive.Entries, e => e.Name == "Reconciled_02_Civil.xlsx");
-        Assert.Contains(zipArchive.Entries, e => e.Name == "[Source_Priced]_Contractor_Priced.xlsx");
+        Assert.Contains(zipArchive.Entries, e => e.Name == "Contractor_Priced.xlsx");
         Assert.Contains(zipArchive.Entries, e => e.Name == "DP3_Executive_Commercial_Dashboard.xlsx");
         Assert.Contains(zipArchive.Entries, e => e.Name == "Reconciliation_Audit_Summary.txt");
 

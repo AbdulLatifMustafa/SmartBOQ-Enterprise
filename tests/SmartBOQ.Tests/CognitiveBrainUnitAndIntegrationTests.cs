@@ -180,6 +180,150 @@ public class CognitiveBrainUnitAndIntegrationTests
         Assert.Equal(18500m, matches[1].InjectedRate);
     }
 
+    [Fact]
+    public void ContractualScopeClassifier_CorrectlyIdentifiesScopes_EnglishAndArabic()
+    {
+        // Supply Only
+        Assert.Equal(ContractualActionScope.SupplyOnly, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("Supply of Main Access Control Panel 16 reader capacity"));
+        Assert.Equal(ContractualActionScope.SupplyOnly, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("توريد لوحة تحكم رئيسية بنظام الدخول الذكي"));
+        Assert.Equal(ContractualActionScope.SupplyOnly, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("شراء وتوريد مهمات كابلات نحاسية"));
+
+        // Install Only
+        Assert.Equal(ContractualActionScope.InstallOnly, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("Installation of Main Access Control Panel 16 reader capacity"));
+        Assert.Equal(ContractualActionScope.InstallOnly, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("تركيب لوحة تحكم رئيسية بنظام الدخول الذكي"));
+        Assert.Equal(ContractualActionScope.InstallOnly, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("مصنعية تركيب وسحب كابلات"));
+
+        // Dual Scope
+        Assert.Equal(ContractualActionScope.SupplyAndInstall, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("Supply and install 24V DC Access Control Panel"));
+        Assert.Equal(ContractualActionScope.SupplyAndInstall, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("توريد وتركيب لوحة تحكم رئيسية شاملة الاختبار والتشغيل"));
+
+        // Noun phrase masking (Power supply should NOT trigger SupplyOnly for an installation item)
+        Assert.Equal(ContractualActionScope.InstallOnly, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("Installation of 24V DC Power Supply unit and batteries"));
+
+        // Demolition / Dismantle
+        Assert.Equal(ContractualActionScope.Dismantle, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("Dismantling and removal of existing electrical panels"));
+        Assert.Equal(ContractualActionScope.Dismantle, 
+            SmartBOQ.Domain.Analysis.ContractualScopeClassifier.DetectScope("فك وإزالة لوحات التوزيع القديمة وتخريدها"));
+    }
+
+    [Fact]
+    public async Task CognitiveAdaptiveBrain_EnforcesScopeExclusivity_SupplyNeverMatchesInstall()
+    {
+        var brain = new CognitiveAdaptiveBrain();
+
+        // Target: Supply only (Row 22 scenario)
+        var targetSupply = new BoqItem
+        {
+            Id = "T_SUPPLY",
+            BillNumber = "Act. Comp. D28",
+            SheetName = "Act. Comp. D28",
+            ItemCode = "28 13 00",
+            Description = "Supply of Main Access Control Panel 16 reader capacity including enclosure",
+            Unit = "No.",
+            Quantity = 1m
+        };
+
+        // Source: ONLY Install candidate available (Row 26 scenario)
+        var sourceInstallOnly = new List<BoqItem>
+        {
+            new BoqItem
+            {
+                Id = "S_INSTALL",
+                BillNumber = "Estimate",
+                SheetName = "Sheet1",
+                ItemCode = "2",
+                Description = "Install, testing, commissioning, of main access control panel 16 reader capacity including enclosure",
+                Unit = "No.",
+                Quantity = 1m,
+                UnitRate = 65000m
+            }
+        };
+
+        // Matching Supply target with Install-only source should be REJECTED (unmatched / fallback)
+        var results = await brain.MatchItemsAsync(new[] { targetSupply }, sourceInstallOnly, sensitivity: 0.70);
+
+        Assert.Single(results);
+        Assert.Null(results[0].MatchedSourceItem); // Must NOT match install source!
+        Assert.NotEqual(65000m, results[0].InjectedRate);
+    }
+
+    [Fact]
+    public async Task CognitiveAdaptiveBrain_MatchesCorrespondingSupplyAndInstallCorrectly()
+    {
+        var brain = new CognitiveAdaptiveBrain();
+
+        var targets = new List<BoqItem>
+        {
+            new BoqItem
+            {
+                Id = "T_SUPPLY",
+                BillNumber = "Act. Comp. D28",
+                SheetName = "Act. Comp. D28",
+                ItemCode = "28 13 00",
+                Description = "Supply of Main Access Control Panel 16 reader capacity including enclosure",
+                Unit = "No.",
+                Quantity = 1m
+            },
+            new BoqItem
+            {
+                Id = "T_INSTALL",
+                BillNumber = "Act. Comp. D28",
+                SheetName = "Act. Comp. D28",
+                ItemCode = "2",
+                Description = "Install, testing, commissioning, of main access control panel 16 reader capacity including enclosure",
+                Unit = "No.",
+                Quantity = 1m
+            }
+        };
+
+        var sources = new List<BoqItem>
+        {
+            new BoqItem
+            {
+                Id = "S_INSTALL",
+                BillNumber = "Estimate",
+                SheetName = "Sheet1",
+                ItemCode = "2",
+                Description = "Install, testing, commissioning, of main access control panel 16 reader capacity including enclosure",
+                Unit = "No.",
+                Quantity = 1m,
+                UnitRate = 65000m
+            },
+            new BoqItem
+            {
+                Id = "S_SUPPLY",
+                BillNumber = "Estimate",
+                SheetName = "Sheet1",
+                ItemCode = "28 13 00",
+                Description = "Supply of Main Access Control Panel 16 reader capacity including enclosure",
+                Unit = "No.",
+                Quantity = 1m,
+                UnitRate = 655000m
+            }
+        };
+
+        var results = await brain.MatchItemsAsync(targets, sources, sensitivity: 0.70);
+
+        Assert.Equal(2, results.Count);
+        // Supply target matched Supply source at 655,000
+        Assert.Equal("S_SUPPLY", results[0].MatchedSourceItem?.Id);
+        Assert.Equal(655000m, results[0].InjectedRate);
+
+        // Install target matched Install source at 65,000
+        Assert.Equal("S_INSTALL", results[1].MatchedSourceItem?.Id);
+        Assert.Equal(65000m, results[1].InjectedRate);
+    }
+
     private static BoqItem CreatePricedItem(string code, string desc, decimal qty, decimal rate)
     {
         return new BoqItem
