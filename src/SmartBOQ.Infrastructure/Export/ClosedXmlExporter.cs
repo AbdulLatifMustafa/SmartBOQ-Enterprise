@@ -68,6 +68,13 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                     File.Copy(templateFilePath, outputFilePath, overwrite: true);
                 }
 
+                // Step 1.5: If dynamic linking enabled, extract original external formulas from template before modifying
+                Dictionary<string, string>? originalTemplateFormulas = null;
+                if (enableDynamicLinking)
+                {
+                    originalTemplateFormulas = ExtractExternalFormulasFromTemplate(outputFilePath);
+                }
+
                 // Step 2: Sanitize package metadata and relationships using base class engine
                 SanitizeOpenXmlPackage(outputFilePath);
 
@@ -139,22 +146,32 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                         }
                     }
 
-                    // Ensure Rate and Amount columns have sufficient width to avoid '####' display in Excel
-                    var modifiedCols = new HashSet<int>();
+                    // Ensure Rate (>=16) and Amount (>=18) columns have sufficient width to avoid '####' display in Excel
+                    var rateCols = new HashSet<int>();
+                    var amountCols = new HashSet<int>();
                     foreach (var pair in group)
                     {
                         int rCol = pair.TargetItem.RateColumnIndex > 0 ? pair.TargetItem.RateColumnIndex : 7;
-                        modifiedCols.Add(rCol);
+                        rateCols.Add(rCol);
                         int aCol = pair.TargetItem.AmountColumnIndex > 0 ? pair.TargetItem.AmountColumnIndex : rCol + 1;
-                        modifiedCols.Add(aCol);
+                        amountCols.Add(aCol);
                     }
 
-                    foreach (int colIdx in modifiedCols)
+                    foreach (int colIdx in rateCols)
                     {
                         var col = ws.Column(colIdx);
                         if (col.Width < 16.0)
                         {
                             col.Width = 16.0;
+                        }
+                    }
+
+                    foreach (int colIdx in amountCols)
+                    {
+                        var col = ws.Column(colIdx);
+                        if (col.Width < 18.0)
+                        {
+                            col.Width = 18.0;
                         }
                     }
 
@@ -168,10 +185,10 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 // Step 5: Save workbook
                 workbook.Save();
 
-                // Step 6: Inject relative dynamic links if source contractor file is provided
-                if (enableDynamicLinking && !string.IsNullOrWhiteSpace(sourceContractorFilePath))
+                // Step 6: Inject relative dynamic links if dynamic linking is enabled
+                if (enableDynamicLinking)
                 {
-                    InjectRelativeDynamicLinks(outputFilePath, sourceContractorFilePath, matchedPairs);
+                    InjectRelativeDynamicLinks(outputFilePath, sourceContractorFilePath, matchedPairs, originalTemplateFormulas);
                 }
 
                 // Step 7: Post-save OpenXML Archive Sanitization to guarantee 0 repair warnings
@@ -951,50 +968,69 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
     }
 
     /// <summary>
-    /// Injects native OpenXML relative external formulas pointing to the contractor rates workbook (File A).
-    /// Creates the standard externalLink part and binds cells so that rate changes in File A automatically
-    /// propagate into Column G of File B and recalculate Column H in Microsoft Excel,
-    /// while preserving initial cached values when File B is opened independently.
+    /// Extracts external formulas from the original template package before ClosedXML rate injection.
+    /// Stores them mapped by "sheetPath!cellRef" (e.g. "xl/worksheets/sheet7.xml!F14").
+    /// </summary>
+    private static Dictionary<string, string> ExtractExternalFormulasFromTemplate(string zipFilePath)
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!File.Exists(zipFilePath)) return map;
+
+        try
+        {
+            using var archive = ZipFile.OpenRead(zipFilePath);
+            var formulaRegex = new Regex(@"<(?:x:)?c\s+r=""([A-Z0-9]+)""[^>]*>\s*<(?:x:)?f[^>]*>([^<]*\[[^<]*\][^<]*)</(?:x:)?f>", RegexOptions.Compiled);
+
+            foreach (var entry in archive.Entries)
+            {
+                if (entry.FullName.StartsWith("xl/worksheets/sheet", StringComparison.OrdinalIgnoreCase) &&
+                    entry.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+                {
+                    using var reader = new StreamReader(entry.Open(), Encoding.UTF8);
+                    string xml = reader.ReadToEnd();
+                    var matches = formulaRegex.Matches(xml);
+                    foreach (Match m in matches)
+                    {
+                        string cellRef = m.Groups[1].Value;
+                        string formula = m.Groups[2].Value;
+                        map[$"{entry.FullName}!{cellRef}"] = formula;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: if extraction encounters issues, fallback gracefully
+        }
+
+        return map;
+    }
+
+    /// <summary>
+    /// Injects native OpenXML relative dynamic external links pointing to the contractor rates workbooks.
+    /// 1. Discovers and relativizes existing externalLink references (e.g. CANDY FILE.xlsx, Mechanical.xlsx, Electrical.xlsx, or sibling BOQs)
+    ///    so that moving or sharing the export folder preserves live formula calculation in Microsoft Excel.
+    /// 2. If a template has external formulas (e.g. =[1]Sheet1!$L$434+[3]Estimate!$I$596), preserves them while keeping cached rates.
+    /// 3. If a template item is matched to a contractor item without existing formulas, injects the dynamic external reference formula
+    ///    e.g. [3]Estimate!$I$596 pointing to the correct external workbook index.
+    /// 4. Configures full calculation on open (calcPr fullCalcOnLoad="1" forceFullCalculation="1") so modifying contractor files immediately
+    ///    recalculates rates and amounts upon opening the reconciled schedule or summary.
     /// </summary>
     public static void InjectRelativeDynamicLinks(
         string outputZipPath,
-        string sourceContractorFilePath,
-        IReadOnlyList<BoqMatchedPair> matchedPairs)
+        string? sourceContractorFilePath,
+        IReadOnlyList<BoqMatchedPair> matchedPairs,
+        IReadOnlyDictionary<string, string>? originalTemplateFormulas = null)
     {
-        if (string.IsNullOrWhiteSpace(sourceContractorFilePath) || !File.Exists(outputZipPath))
-        {
-            return;
-        }
+        if (!File.Exists(outputZipPath)) return;
 
-        string sourceFileName = Path.GetFileName(sourceContractorFilePath);
-
-        var linkablePairs = matchedPairs
-            .Where(p => p.IsApproved &&
-                        p.InjectedRate.HasValue &&
-                        p.InjectedRate.Value > 0m &&
-                        !p.TargetItem.IsProtected &&
-                        p.TargetItem.Type != BoqItemType.ProvisionalSum &&
-                        p.MatchedSourceItem != null &&
-                        p.TargetItem.AnchorRowIndex > 0 &&
-                        p.MatchedSourceItem.AnchorRowIndex > 0)
-            .ToList();
-
-        if (linkablePairs.Count == 0) return;
-
-        // Group by target sheet name
-        var pairsByTargetSheet = linkablePairs
-            .GroupBy(p => p.TargetItem.BillNumber, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
-
-        // Group distinct source items by their physical source sheet name
-        var sourceItemsBySheet = linkablePairs
-            .Select(p => p.MatchedSourceItem!)
-            .GroupBy(s => string.IsNullOrWhiteSpace(s.SheetName) ? "Sheet1" : s.SheetName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        string exportDir = Path.GetDirectoryName(outputZipPath) ?? "";
+        string? primarySourceFileName = !string.IsNullOrWhiteSpace(sourceContractorFilePath)
+            ? Path.GetFileName(sourceContractorFilePath)
+            : null;
 
         using var archive = ZipFile.Open(outputZipPath, ZipArchiveMode.Update);
 
-        // 1. Map target sheet names to zip entry paths via workbook.xml and workbook.xml.rels
         var wbEntry = archive.GetEntry("xl/workbook.xml");
         var wbRelsEntry = archive.GetEntry("xl/_rels/workbook.xml.rels");
         if (wbEntry == null || wbRelsEntry == null) return;
@@ -1011,19 +1047,20 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             wbDoc = XDocument.Load(s);
         }
 
+        XNamespace rNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        XNamespace pkgRelsNs = "http://schemas.openxmlformats.org/package/2006/relationships";
+        XNamespace wbNs = wbDoc.Root?.Name.Namespace ?? "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+
+        // Map workbook relationship IDs
         var relMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         int maxRId = 1;
-
         foreach (var rel in wbRelsDoc.Descendants().Where(e => e.Name.LocalName == "Relationship"))
         {
             string? id = rel.Attribute("Id")?.Value;
             string? target = rel.Attribute("Target")?.Value;
             if (!string.IsNullOrWhiteSpace(id))
             {
-                if (!string.IsNullOrWhiteSpace(target))
-                {
-                    relMap[id] = target;
-                }
+                if (!string.IsNullOrWhiteSpace(target)) relMap[id] = target;
                 var m = Regex.Match(id, @"\d+");
                 if (m.Success && int.TryParse(m.Value, out int idNum) && idNum > maxRId)
                 {
@@ -1032,9 +1069,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             }
         }
 
+        // Map sheet names to zip entry paths
         var sheetNameToZipPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        XNamespace rNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-
         foreach (var sheet in wbDoc.Descendants().Where(e => e.Name.LocalName == "sheet"))
         {
             string? name = sheet.Attribute("name")?.Value;
@@ -1046,156 +1082,231 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             }
         }
 
-        string extLinkRelId = $"rId{maxRId + 1}";
-
-        // 2. Create or overwrite xl/externalLinks/externalLink1.xml
-        var extLinkSb = new StringBuilder(16384);
-        extLinkSb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
-        extLinkSb.AppendLine("<externalLink xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">");
-        extLinkSb.AppendLine("  <externalBook xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" r:id=\"rId1\">");
-        extLinkSb.AppendLine("    <sheetNames>");
-        for (int i = 0; i < sourceItemsBySheet.Count; i++)
-        {
-            extLinkSb.AppendLine($"      <sheetName val=\"{SecurityElement.Escape(sourceItemsBySheet[i].Key)}\"/>");
-        }
-        extLinkSb.AppendLine("    </sheetNames>");
-        extLinkSb.AppendLine("    <sheetDataSet>");
-        for (int i = 0; i < sourceItemsBySheet.Count; i++)
-        {
-            extLinkSb.AppendLine($"      <sheetData sheetId=\"{i}\">");
-            var distinctRows = sourceItemsBySheet[i]
-                .GroupBy(s => s.AnchorRowIndex)
-                .OrderBy(g => g.Key);
-
-            foreach (var rowGroup in distinctRows)
-            {
-                int r = rowGroup.Key;
-                extLinkSb.AppendLine($"        <row r=\"{r}\">");
-                foreach (var srcItem in rowGroup)
-                {
-                    int colIdx = srcItem.RateColumnIndex > 0 ? srcItem.RateColumnIndex : 18;
-                    string colLetter = GetExcelColumnLetter(colIdx);
-                    string cellRef = $"{colLetter}{r}";
-                    decimal rateVal = srcItem.UnitRate ?? 0m;
-                    extLinkSb.AppendLine($"          <cell r=\"{cellRef}\"><v>{rateVal.ToString(CultureInfo.InvariantCulture)}</v></cell>");
-                }
-                extLinkSb.AppendLine("        </row>");
-            }
-            extLinkSb.AppendLine("      </sheetData>");
-        }
-        extLinkSb.AppendLine("    </sheetDataSet>");
-        extLinkSb.AppendLine("  </externalBook>");
-        extLinkSb.Append("</externalLink>");
-
-        var oldExtLinkEntry = archive.GetEntry("xl/externalLinks/externalLink1.xml");
-        oldExtLinkEntry?.Delete();
-        var extLinkEntry = archive.CreateEntry("xl/externalLinks/externalLink1.xml", CompressionLevel.Fastest);
-        using (var writer = new StreamWriter(extLinkEntry.Open(), Encoding.UTF8))
-        {
-            writer.Write(extLinkSb.ToString());
-        }
-
-        // 3. Create or overwrite xl/externalLinks/_rels/externalLink1.xml.rels
-        string extLinkRelsContent = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
-            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\r\n" +
-            $"  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath\" Target=\"{SecurityElement.Escape(sourceFileName)}\" TargetMode=\"External\"/>\r\n" +
-            "</Relationships>";
-
-        var oldExtRelsEntry = archive.GetEntry("xl/externalLinks/_rels/externalLink1.xml.rels");
-        oldExtRelsEntry?.Delete();
-        var extRelsEntry = archive.CreateEntry("xl/externalLinks/_rels/externalLink1.xml.rels", CompressionLevel.Fastest);
-        using (var writer = new StreamWriter(extRelsEntry.Open(), Encoding.UTF8))
-        {
-            writer.Write(extLinkRelsContent);
-        }
-
-        // 4. Register Part in [Content_Types].xml
-        var ctEntry = archive.GetEntry("[Content_Types].xml");
-        if (ctEntry != null)
-        {
-            string ctContent;
-            using (var reader = new StreamReader(ctEntry.Open(), Encoding.UTF8))
-            {
-                ctContent = reader.ReadToEnd();
-            }
-
-            if (!ctContent.Contains("externalLink+xml", StringComparison.OrdinalIgnoreCase))
-            {
-                ctContent = ctContent.Replace(
-                    "</Types>",
-                    "<Override PartName=\"/xl/externalLinks/externalLink1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml\"/></Types>"
-                );
-                ctEntry.Delete();
-                var newCt = archive.CreateEntry("[Content_Types].xml", CompressionLevel.Fastest);
-                using var writer = new StreamWriter(newCt.Open(), Encoding.UTF8);
-                writer.Write(ctContent);
-            }
-        }
-
-        // 5. Update xl/_rels/workbook.xml.rels with externalLink relationship
-        XNamespace pkgRelsNs = "http://schemas.openxmlformats.org/package/2006/relationships";
-        var relationshipsElem = wbRelsDoc.Root;
-        if (relationshipsElem != null && !relationshipsElem.Descendants().Any(e => e.Attribute("Target")?.Value == "externalLinks/externalLink1.xml"))
-        {
-            relationshipsElem.Add(new XElement(pkgRelsNs + "Relationship",
-                new XAttribute("Id", extLinkRelId),
-                new XAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink"),
-                new XAttribute("Target", "externalLinks/externalLink1.xml")
-            ));
-
-            wbRelsEntry.Delete();
-            var newWbRels = archive.CreateEntry("xl/_rels/workbook.xml.rels", CompressionLevel.Fastest);
-            using var s = newWbRels.Open();
-            wbRelsDoc.Save(s);
-        }
-
-        // 6. Update external references in xl/workbook.xml
-        XNamespace wbNs = wbDoc.Root?.Name.Namespace ?? "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+        // --- STEP 1: Relativize all existing externalLink*.xml.rels and map file names to external indices ---
+        var fileToExtIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var extRefsElem = wbDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "externalReferences");
-        if (extRefsElem == null)
+        var extRefNodes = extRefsElem?.Elements().Where(e => e.Name.LocalName == "externalReference").ToList() ?? new List<XElement>();
+
+        int currentIndex = 1;
+        foreach (var extRef in extRefNodes)
         {
-            var sheetsElem = wbDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "sheets");
-            if (sheetsElem != null)
+            string? rId = extRef.Attribute(rNs + "id")?.Value ?? extRef.Attribute("id")?.Value;
+            if (string.IsNullOrWhiteSpace(rId) || !relMap.TryGetValue(rId, out string? linkPartTarget))
             {
-                var newExtRefs = new XElement(wbNs + "externalReferences",
-                    new XElement(wbNs + "externalReference",
-                        new XAttribute(rNs + "id", extLinkRelId)
-                    )
-                );
-                sheetsElem.AddAfterSelf(newExtRefs);
+                currentIndex++;
+                continue;
             }
+
+            string linkPartPath = linkPartTarget.StartsWith("xl/", StringComparison.OrdinalIgnoreCase) ? linkPartTarget : $"xl/{linkPartTarget}";
+            string linkPartFileName = Path.GetFileName(linkPartPath);
+            string relsPath = $"xl/externalLinks/_rels/{linkPartFileName}.rels";
+
+            var relsEntry = archive.GetEntry(relsPath);
+            if (relsEntry != null)
+            {
+                XDocument linkRelsDoc;
+                using (var s = relsEntry.Open())
+                {
+                    linkRelsDoc = XDocument.Load(s);
+                }
+
+                bool relsChanged = false;
+                foreach (var rel in linkRelsDoc.Descendants().Where(e => e.Name.LocalName == "Relationship"))
+                {
+                    string? target = rel.Attribute("Target")?.Value;
+                    if (!string.IsNullOrWhiteSpace(target))
+                    {
+                        string unescaped = Uri.UnescapeDataString(target.Replace('\\', '/'));
+                        string fileName = Path.GetFileName(unescaped);
+
+                        // If target points to a sibling schedule that has an exported '_Reconciled.xlsx' equivalent, link to it
+                        string baseNoExt = Path.GetFileNameWithoutExtension(fileName);
+                        string recFileName = $"{baseNoExt}_Reconciled.xlsx";
+                        string newFileName = fileName;
+
+                        if (!string.IsNullOrEmpty(exportDir) && File.Exists(Path.Combine(exportDir, recFileName)))
+                        {
+                            newFileName = recFileName;
+                        }
+
+                        // Relativize target to just the local file name in same directory
+                        string escapedNewTarget = Uri.EscapeDataString(newFileName).Replace("%2E", ".");
+                        if (!string.Equals(target, escapedNewTarget, StringComparison.Ordinal))
+                        {
+                            rel.SetAttributeValue("Target", escapedNewTarget);
+                            rel.SetAttributeValue("TargetMode", "External");
+                            relsChanged = true;
+                        }
+
+                        fileToExtIndex[newFileName] = currentIndex;
+                        fileToExtIndex[baseNoExt] = currentIndex;
+                        fileToExtIndex[fileName] = currentIndex;
+                    }
+                }
+
+                if (relsChanged)
+                {
+                    relsEntry.Delete();
+                    var newRelsEntry = archive.CreateEntry(relsPath, CompressionLevel.Fastest);
+                    using var s = newRelsEntry.Open();
+                    linkRelsDoc.Save(s);
+                }
+            }
+
+            currentIndex++;
+        }
+
+        // --- STEP 2: Ensure primary contractor source file and any matched source files are registered in externalReferences ---
+        var sourceFilesToRegister = new List<string>();
+        if (!string.IsNullOrWhiteSpace(primarySourceFileName) && !fileToExtIndex.ContainsKey(primarySourceFileName))
+        {
+            sourceFilesToRegister.Add(primarySourceFileName);
+        }
+
+        foreach (var pair in matchedPairs)
+        {
+            string? wbName = pair.MatchedSourceItem?.WorkbookName;
+            if (!string.IsNullOrWhiteSpace(wbName) && !fileToExtIndex.ContainsKey(wbName) && !sourceFilesToRegister.Contains(wbName, StringComparer.OrdinalIgnoreCase))
+            {
+                sourceFilesToRegister.Add(wbName);
+            }
+        }
+
+        bool wbDocModified = false;
+        bool wbRelsDocModified = false;
+
+        foreach (var srcFile in sourceFilesToRegister)
+        {
+            int nextExtNum = 1;
+            while (archive.GetEntry($"xl/externalLinks/externalLink{nextExtNum}.xml") != null)
+            {
+                nextExtNum++;
+            }
+
+            maxRId++;
+            string newRelId = $"rId{maxRId}";
+            string linkPartRelTarget = $"externalLinks/externalLink{nextExtNum}.xml";
+            string linkPartFullZip = $"xl/{linkPartRelTarget}";
+            string linkRelsZip = $"xl/externalLinks/_rels/externalLink{nextExtNum}.xml.rels";
+
+            // Create externalLink XML
+            string escapedSrc = Uri.EscapeDataString(srcFile).Replace("%2E", ".");
+            string extLinkContent = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                "<externalLink xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\r\n" +
+                "  <externalBook xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" r:id=\"rId1\">\r\n" +
+                "    <sheetNames><sheetName val=\"Sheet1\"/></sheetNames>\r\n" +
+                "  </externalBook>\r\n" +
+                "</externalLink>";
+
+            var newExtEntry = archive.CreateEntry(linkPartFullZip, CompressionLevel.Fastest);
+            using (var writer = new StreamWriter(newExtEntry.Open(), Encoding.UTF8))
+            {
+                writer.Write(extLinkContent);
+            }
+
+            // Create externalLink .rels
+            string extRelsContent = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\r\n" +
+                $"  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath\" Target=\"{escapedSrc}\" TargetMode=\"External\"/>\r\n" +
+                "</Relationships>";
+
+            var newExtRelsEntry = archive.CreateEntry(linkRelsZip, CompressionLevel.Fastest);
+            using (var writer = new StreamWriter(newExtRelsEntry.Open(), Encoding.UTF8))
+            {
+                writer.Write(extRelsContent);
+            }
+
+            // Register in [Content_Types].xml
+            var ctEntry = archive.GetEntry("[Content_Types].xml");
+            if (ctEntry != null)
+            {
+                string ctContent;
+                using (var reader = new StreamReader(ctEntry.Open(), Encoding.UTF8))
+                {
+                    ctContent = reader.ReadToEnd();
+                }
+                string overrideStr = $"<Override PartName=\"/{linkPartFullZip}\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml\"/>";
+                if (!ctContent.Contains(linkPartFullZip, StringComparison.OrdinalIgnoreCase))
+                {
+                    ctContent = ctContent.Replace("</Types>", $"{overrideStr}</Types>");
+                    ctEntry.Delete();
+                    var newCt = archive.CreateEntry("[Content_Types].xml", CompressionLevel.Fastest);
+                    using var writer = new StreamWriter(newCt.Open(), Encoding.UTF8);
+                    writer.Write(ctContent);
+                }
+            }
+
+            // Add relationship to xl/_rels/workbook.xml.rels
+            wbRelsDoc.Root?.Add(new XElement(pkgRelsNs + "Relationship",
+                new XAttribute("Id", newRelId),
+                new XAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink"),
+                new XAttribute("Target", linkPartRelTarget)));
+            wbRelsDocModified = true;
+
+            // Add externalReference to xl/workbook.xml
+            if (extRefsElem == null)
+            {
+                extRefsElem = new XElement(wbNs + "externalReferences");
+                var sheetsElem = wbDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "sheets");
+                if (sheetsElem != null) sheetsElem.AddAfterSelf(extRefsElem);
+                else wbDoc.Root?.Add(extRefsElem);
+            }
+
+            extRefsElem.Add(new XElement(wbNs + "externalReference", new XAttribute(rNs + "id", newRelId)));
+            wbDocModified = true;
+
+            int newExtIndex = extRefsElem.Elements().Count();
+            fileToExtIndex[srcFile] = newExtIndex;
+            fileToExtIndex[Path.GetFileNameWithoutExtension(srcFile)] = newExtIndex;
         }
 
         // Configure full calculation on workbook open
-        var wbPr = wbDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "workbookPr");
-        if (wbPr != null && wbPr.Attribute("updateLinks")?.Value == "always")
-        {
-            wbPr.Attribute("updateLinks")?.Remove();
-        }
-
-        // Ensure full calculation flags are set
         var calcPr = wbDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "calcPr");
         if (calcPr != null)
         {
             calcPr.SetAttributeValue("fullCalcOnLoad", "1");
             calcPr.SetAttributeValue("forceFullCalculation", "1");
+            wbDocModified = true;
         }
         else
         {
             wbDoc.Root?.Add(new XElement(wbNs + "calcPr",
                 new XAttribute("fullCalcOnLoad", "1"),
                 new XAttribute("forceFullCalculation", "1")));
+            wbDocModified = true;
         }
 
-        wbEntry.Delete();
-        var newWb = archive.CreateEntry("xl/workbook.xml", CompressionLevel.Fastest);
-        using (var s = newWb.Open())
+        if (wbRelsDocModified)
         {
+            wbRelsEntry.Delete();
+            var newWbRels = archive.CreateEntry("xl/_rels/workbook.xml.rels", CompressionLevel.Fastest);
+            using var s = newWbRels.Open();
+            wbRelsDoc.Save(s);
+        }
+
+        if (wbDocModified)
+        {
+            wbEntry.Delete();
+            var newWb = archive.CreateEntry("xl/workbook.xml", CompressionLevel.Fastest);
+            using var s = newWb.Open();
             wbDoc.Save(s);
         }
 
-        // 7. Inject external formulas into each target worksheet XML using single-pass Regex
-        var cellPattern = new Regex(@"(<(?:x:)?c\s+r=""([A-Z0-9]+)""[^>]*>)(?:<(?:x:)?f>.*?</(?:x:)?f>)?(\s*<(?:x:)?v>)", RegexOptions.Compiled);
+        // --- STEP 3: Inject / Restore formulas in worksheet XMLs ---
+        var linkablePairs = matchedPairs
+            .Where(p => p.IsApproved &&
+                        p.InjectedRate.HasValue &&
+                        p.InjectedRate.Value > 0m &&
+                        !p.TargetItem.IsProtected &&
+                        p.TargetItem.Type != BoqItemType.ProvisionalSum &&
+                        p.TargetItem.AnchorRowIndex > 0)
+            .ToList();
+
+        var pairsByTargetSheet = linkablePairs
+            .GroupBy(p => !string.IsNullOrWhiteSpace(p.TargetItem.SheetName) ? p.TargetItem.SheetName : p.TargetItem.BillNumber, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var cellPattern = new Regex(@"(<(?:x:)?c\s+r=""([A-Z0-9]+)""[^>]*>)(?:<(?:x:)?f[^>]*>.*?</(?:x:)?f>)?(\s*<(?:x:)?v>)", RegexOptions.Compiled);
 
         foreach (var kvp in pairsByTargetSheet)
         {
@@ -1210,23 +1321,48 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             var sheetEntry = archive.GetEntry(entryPath);
             if (sheetEntry == null) continue;
 
-            // Build dictionary of CellRef -> FormulaText for this sheet
+            // Build formula map for cells in this sheet
             var cellFormulaMap = new Dictionary<string, string>(sheetPairs.Count, StringComparer.OrdinalIgnoreCase);
+
             foreach (var pair in sheetPairs)
             {
                 int anchorRow = pair.TargetItem.AnchorRowIndex;
                 int rateCol = pair.TargetItem.RateColumnIndex > 0 ? pair.TargetItem.RateColumnIndex : 7;
                 string targetCellRef = $"{GetExcelColumnLetter(rateCol)}{anchorRow}";
 
-                string srcSheet = string.IsNullOrWhiteSpace(pair.MatchedSourceItem!.SheetName) ? "Sheet1" : pair.MatchedSourceItem.SheetName;
-                string safeSrcSheet = srcSheet.Contains(' ') ? $"'{srcSheet}'" : srcSheet;
-                int srcCol = pair.MatchedSourceItem.RateColumnIndex > 0 ? pair.MatchedSourceItem.RateColumnIndex : 18;
-                string srcColLetter = GetExcelColumnLetter(srcCol);
-                int srcRow = pair.MatchedSourceItem.AnchorRowIndex;
+                // 1. Check if template already had an external formula for this cell
+                string fullKey = $"{entryPath}!{targetCellRef}";
+                if (originalTemplateFormulas != null && originalTemplateFormulas.TryGetValue(fullKey, out string? origFormula) && !string.IsNullOrWhiteSpace(origFormula))
+                {
+                    cellFormulaMap[targetCellRef] = origFormula;
+                    continue;
+                }
 
-                string formulaText = $"[1]{safeSrcSheet}!${srcColLetter}${srcRow}";
-                cellFormulaMap[targetCellRef] = formulaText;
+                // 2. Otherwise generate relative formula pointing to matched contractor item
+                if (pair.MatchedSourceItem != null && pair.MatchedSourceItem.AnchorRowIndex > 0)
+                {
+                    string srcFile = !string.IsNullOrWhiteSpace(pair.MatchedSourceItem.WorkbookName)
+                        ? pair.MatchedSourceItem.WorkbookName
+                        : (primarySourceFileName ?? "");
+
+                    if (!fileToExtIndex.TryGetValue(srcFile, out int extIdx) &&
+                        !fileToExtIndex.TryGetValue(Path.GetFileNameWithoutExtension(srcFile), out extIdx))
+                    {
+                        extIdx = 1;
+                    }
+
+                    string srcSheet = string.IsNullOrWhiteSpace(pair.MatchedSourceItem.SheetName) ? "Sheet1" : pair.MatchedSourceItem.SheetName;
+                    string safeSrcSheet = srcSheet.Contains(' ') ? $"'{srcSheet}'" : srcSheet;
+                    int srcCol = pair.MatchedSourceItem.RateColumnIndex > 0 ? pair.MatchedSourceItem.RateColumnIndex : 18;
+                    string srcColLetter = GetExcelColumnLetter(srcCol);
+                    int srcRow = pair.MatchedSourceItem.AnchorRowIndex;
+
+                    string formulaText = $"[{extIdx}]{safeSrcSheet}!${srcColLetter}${srcRow}";
+                    cellFormulaMap[targetCellRef] = formulaText;
+                }
             }
+
+            if (cellFormulaMap.Count == 0) continue;
 
             string sheetXml;
             using (var reader = new StreamReader(sheetEntry.Open(), Encoding.UTF8))

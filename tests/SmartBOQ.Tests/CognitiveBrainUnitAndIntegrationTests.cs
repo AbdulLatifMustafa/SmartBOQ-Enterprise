@@ -408,6 +408,64 @@ public class CognitiveBrainUnitAndIntegrationTests
         Assert.True(cell24F.DataType == ClosedXML.Excel.XLDataType.Number, "Cell F24 must be a Number");
     }
 
+    [Fact]
+    public async Task ExportPricedBoqAsync_WithDynamicLinking_RelativizesExternalLinksAndInjectsFormulas()
+    {
+        string templatePath = @"C:\Users\BodyBoy\Desktop\logs\BOQs\BOQs\07_E_1_2  Design Build Fixed CCTV Caravan_Rev_02.xlsx";
+        string elecPath = @"C:\Users\BodyBoy\Desktop\logs\BOQs\Electrical.xlsx";
+        if (!System.IO.File.Exists(templatePath) || !System.IO.File.Exists(elecPath)) return;
+
+        var consultantReader = new SmartBOQ.Infrastructure.Parsers.HierarchicalBoqReader();
+        var contractorReader = new SmartBOQ.Infrastructure.Parsers.UniversalAdaptiveBoqReader();
+        var targetSheets = await consultantReader.ReadConsultantHierarchicalBoqAsync(templatePath);
+        var targetItems = targetSheets.SelectMany(s => s.Items).ToList();
+        var elecItems = await contractorReader.ReadContractorFlatBoqAsync(elecPath);
+
+        var brain = new CognitiveAdaptiveBrain();
+        var pairs = await brain.MatchItemsAsync(targetItems, elecItems, sensitivity: 0.70);
+
+        string testOutDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SmartBOQ_Dynamic_Test_" + Guid.NewGuid().ToString("N")[..8]);
+        System.IO.Directory.CreateDirectory(testOutDir);
+        string testOutPath = System.IO.Path.Combine(testOutDir, "07_E_1_2  Design Build Fixed CCTV Caravan_Rev_02_Reconciled.xlsx");
+
+        // Copy contractor file to same directory to mirror production export behavior
+        string localElecPath = System.IO.Path.Combine(testOutDir, "Electrical.xlsx");
+        System.IO.File.Copy(elecPath, localElecPath, overwrite: true);
+
+        var exporter = new SmartBOQ.Infrastructure.Export.ClosedXmlExporter();
+        await exporter.ExportPricedBoqAsync(templatePath, testOutPath, pairs, localElecPath, enableDynamicLinking: true);
+
+        // 1. Verify zip structure and relativized external links
+        using (var zip = System.IO.Compression.ZipFile.OpenRead(testOutPath))
+        {
+            var relsEntry = zip.GetEntry("xl/externalLinks/_rels/externalLink3.xml.rels");
+            Assert.NotNull(relsEntry);
+            using var reader = new System.IO.StreamReader(relsEntry.Open());
+            string relsXml = reader.ReadToEnd();
+            Assert.Contains("Target=\"Electrical.xlsx\"", relsXml);
+            Assert.DoesNotContain("/CIVIL/SHARE", relsXml);
+
+            // 2. Verify sheet7.xml has external formula and cached rate for F14
+            var sheet7 = zip.GetEntry("xl/worksheets/sheet7.xml");
+            Assert.NotNull(sheet7);
+            using var s7Reader = new System.IO.StreamReader(sheet7.Open());
+            string s7Xml = s7Reader.ReadToEnd();
+            Assert.Contains("r=\"F14\"", s7Xml);
+            Assert.Contains("[3]Estimate!$I$596", s7Xml);
+            Assert.Contains("264679.56", s7Xml);
+
+            // 3. Verify workbook.xml calcPr has fullCalcOnLoad
+            var wbEntry = zip.GetEntry("xl/workbook.xml");
+            Assert.NotNull(wbEntry);
+            using var wbReader = new System.IO.StreamReader(wbEntry.Open());
+            string wbXml = wbReader.ReadToEnd();
+            Assert.Contains("fullCalcOnLoad=\"1\"", wbXml);
+        }
+
+        // Clean up
+        try { System.IO.Directory.Delete(testOutDir, true); } catch { }
+    }
+
     private static BoqItem CreatePricedItem(string code, string desc, decimal qty, decimal rate)
     {
         return new BoqItem

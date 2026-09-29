@@ -1651,7 +1651,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                     outExcelPath,
                     tgtResult.MatchedPairs,
                     sourceFiles[0],
-                    enableDynamicLinking: false,
+                    enableDynamicLinking: true,
                     progress: null,
                     ct: ct);
 
@@ -1915,7 +1915,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 OutputFilePath, 
                 MatchedPairs.ToList(), 
                 FileAPath, 
-                enableDynamicLinking: false, 
+                enableDynamicLinking: true, 
                 progress,
                 ct);
 
@@ -2048,7 +2048,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                     OutputFilePath, 
                     MatchedPairs.ToList(), 
                     FileAPath, 
-                    enableDynamicLinking: false, 
+                    enableDynamicLinking: true, 
                     progress);
 
                 LastExportedSchedulePath = OutputFilePath;

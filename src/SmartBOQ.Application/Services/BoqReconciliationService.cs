@@ -435,7 +435,7 @@ public sealed class BoqReconciliationService
             string baseName = Path.GetFileNameWithoutExtension(targetPath);
             string outPath = Path.Combine(outputDirectory, $"{baseName}_Reconciled.xlsx");
 
-            await _exporter.ExportPricedBoqAsync(targetPath, outPath, matchedPairs, primarySourcePath, enableDynamicLinking: false, progress: null, ct: ct).ConfigureAwait(false);
+            await _exporter.ExportPricedBoqAsync(targetPath, outPath, matchedPairs, primarySourcePath, enableDynamicLinking: true, progress: null, ct: ct).ConfigureAwait(false);
 
             batchResults.Add(new BatchTargetResult
             {
@@ -458,7 +458,7 @@ public sealed class BoqReconciliationService
         string outputPath,
         IReadOnlyList<BoqMatchedPair> pairs,
         string? sourceContractorFilePath = null,
-        bool enableDynamicLinking = false,
+        bool enableDynamicLinking = true,
         IProgress<int>? progress = null,
         CancellationToken ct = default)
     {
