@@ -40,10 +40,11 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
                     continue;
                 }
 
-                bool isPurePsSchedule = sheetName.Equals("Bill 6 Provisional Sum", StringComparison.OrdinalIgnoreCase) ||
-                                        sheetName.StartsWith("Bill 6 Provisional", StringComparison.OrdinalIgnoreCase) ||
-                                        sheetName.Equals("Provisional Sums", StringComparison.OrdinalIgnoreCase) ||
-                                        sheetName.Equals("المبالغ الاحتياطية", StringComparison.OrdinalIgnoreCase);
+                bool isPurePsSchedule = sheetName.Contains("Provisional Sum", StringComparison.OrdinalIgnoreCase) ||
+                                        sheetName.Contains("Provisional", StringComparison.OrdinalIgnoreCase) ||
+                                        sheetName.Contains("Contingenc", StringComparison.OrdinalIgnoreCase) ||
+                                        sheetName.Contains("الاحتياطية", StringComparison.OrdinalIgnoreCase) ||
+                                        sheetName.Contains("احتياطي", StringComparison.OrdinalIgnoreCase);
 
                 var items = new List<BoqItem>(150);
                 string currentSection = string.Empty;

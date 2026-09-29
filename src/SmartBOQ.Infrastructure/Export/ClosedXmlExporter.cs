@@ -74,7 +74,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 using var workbook = new XLWorkbook(outputFilePath);
 
                 // Step 3: Inject rates into target bill sheets
-                var sheetGroups = matchedPairs.GroupBy(p => p.TargetItem.BillNumber).ToList();
+                var sheetGroups = matchedPairs.GroupBy(p => !string.IsNullOrWhiteSpace(p.TargetItem.SheetName) ? p.TargetItem.SheetName : p.TargetItem.BillNumber).ToList();
                 int totalSheets = sheetGroups.Count;
                 int processedSheets = 0;
 
@@ -85,7 +85,11 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
                     if (!workbook.TryGetWorksheet(sheetName, out var ws))
                     {
-                        continue;
+                        var altName = group.FirstOrDefault()?.TargetItem.BillNumber;
+                        if (string.IsNullOrEmpty(altName) || !workbook.TryGetWorksheet(altName, out ws))
+                        {
+                            continue;
+                        }
                     }
 
                     foreach (var pair in group)
