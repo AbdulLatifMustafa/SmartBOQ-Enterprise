@@ -89,42 +89,28 @@ public sealed class MultiCurrencyCognitiveArbitrator
 
         decimal ratio = rateA > rateB ? rateA / rateB : rateB / rateA;
 
-        // Check against USD/EGP parity (~48.5)
-        decimal usdEgp = _exchangeTable.GetParityRatio(CurrencyType.USD, CurrencyType.EGP);
-        if (Math.Abs(ratio - usdEgp) / usdEgp < 0.20m) // Within 20% of USD:EGP parity
+        CurrencyType[] candidateCurrencies = [CurrencyType.USD, CurrencyType.EUR, CurrencyType.SAR, CurrencyType.AED, CurrencyType.GBP, CurrencyType.KWD];
+        foreach (var foreign in candidateCurrencies)
         {
-            if (rateA > rateB)
-            {
-                likelyA = CurrencyType.EGP;
-                likelyB = CurrencyType.USD;
-                normalizedRateB = rateB * usdEgp;
-            }
-            else
-            {
-                likelyA = CurrencyType.USD;
-                likelyB = CurrencyType.EGP;
-                normalizedRateB = rateB / usdEgp;
-            }
-            return true;
-        }
+            decimal parity = _exchangeTable.GetParityRatio(foreign, CurrencyType.EGP);
+            if (parity <= 0m || parity == 1.0m) continue;
 
-        // Check against EUR/EGP parity (~52.8)
-        decimal eurEgp = _exchangeTable.GetParityRatio(CurrencyType.EUR, CurrencyType.EGP);
-        if (Math.Abs(ratio - eurEgp) / eurEgp < 0.20m)
-        {
-            if (rateA > rateB)
+            if (Math.Abs(ratio - parity) / parity < 0.18m)
             {
-                likelyA = CurrencyType.EGP;
-                likelyB = CurrencyType.EUR;
-                normalizedRateB = rateB * eurEgp;
+                if (rateA > rateB)
+                {
+                    likelyA = CurrencyType.EGP;
+                    likelyB = foreign;
+                    normalizedRateB = rateB * parity;
+                }
+                else
+                {
+                    likelyA = foreign;
+                    likelyB = CurrencyType.EGP;
+                    normalizedRateB = rateB / parity;
+                }
+                return true;
             }
-            else
-            {
-                likelyA = CurrencyType.EUR;
-                likelyB = CurrencyType.EGP;
-                normalizedRateB = rateB / eurEgp;
-            }
-            return true;
         }
 
         return false;

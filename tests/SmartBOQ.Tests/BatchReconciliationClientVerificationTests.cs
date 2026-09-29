@@ -167,4 +167,75 @@ public class BatchReconciliationClientVerificationTests
 
         Assert.True(grandPct >= 99.0, $"Expected at least 99% overall match with Cognitive Brain, but got {grandPct:F1}%");
     }
+
+    [Fact]
+    public async Task ReconcileRasElHekma_DP3_Project_AchievesHighMatch()
+    {
+        string proDir = @"C:\Users\BodyBoy\Desktop\BOQs\pro";
+        string sourceHatchway = Path.Combine(proDir, "DP3 - Hatchway.xlsx");
+        string targetReh = Path.Combine(proDir, "REH.08.26.3199 DP3 Pricing Schedule Re-Measure.xlsx");
+
+        if (!File.Exists(sourceHatchway) || !File.Exists(targetReh))
+        {
+            _output.WriteLine("Ras El Hekma DP3 files not found. Skipping test.");
+            return;
+        }
+
+        var gate = new PreFlightVerificationGate();
+        var flatReader = new UniversalAdaptiveBoqReader();
+        var hierReader = new HierarchicalBoqReader();
+        var brain = new SmartBOQ.Infrastructure.CognitiveBrain.Engine.CognitiveAdaptiveBrain();
+        var exporter = new ClosedXmlExporter();
+        string tempDb = Path.Combine(Path.GetTempPath(), $"test_smartboq_reh_{Guid.NewGuid():N}.db");
+        var repo = new SqliteBoqRepository(tempDb);
+        var inspector = new BoqInspectorService();
+        var service = new BoqReconciliationService(gate, flatReader, hierReader, brain, exporter, repo, inspector);
+
+        _output.WriteLine("==========================================================================");
+        _output.WriteLine("      RAS EL HEKMA (DP3) - LIVE RECONCILIATION VERIFICATION               ");
+        _output.WriteLine("==========================================================================");
+        _output.WriteLine($" • Source File (Contractor): {Path.GetFileName(sourceHatchway)}");
+        _output.WriteLine($" • Target File (Consultant): {Path.GetFileName(targetReh)}");
+
+        var stopwatch = Stopwatch.StartNew();
+        var result = await service.ReconcileAsync(sourceHatchway, targetReh, sensitivity: 0.85);
+        stopwatch.Stop();
+
+        int totalCount = result.MatchedPairs.Count;
+        int pricedCount = result.MatchedPairs.Count(p => 
+            (p.InjectedRate.HasValue && p.InjectedRate > 0 && !p.IsProvisionalSum) || 
+            (p.IsApproved && p.Confidence != MatchConfidence.Unmatched && !p.IsVariationOrder));
+        int exactCount = result.MatchedPairs.Count(p => p.Confidence == MatchConfidence.Exact);
+        int fuzzyCount = result.MatchedPairs.Count(p => p.Confidence == MatchConfidence.HighFuzzy);
+        int voCount = result.MatchedPairs.Count(p => p.IsVariationOrder);
+        int psCount = result.MatchedPairs.Count(p => p.TargetItem.Type == BoqItemType.ProvisionalSum);
+
+        double pct = totalCount > 0 ? (double)pricedCount / totalCount * 100.0 : 0.0;
+
+        decimal totalReconciledAmount = result.MatchedPairs
+            .Where(p => p.InjectedRate.HasValue)
+            .Sum(p => p.TargetItem.Quantity * p.InjectedRate!.Value);
+
+        _output.WriteLine("--------------------------------------------------------------------------");
+        _output.WriteLine($" • Total Consultant Items  : {totalCount}");
+        _output.WriteLine($" • Total Priced & Approved  : {pricedCount} ({pct:F1}%)");
+        _output.WriteLine($" • Exact Matches            : {exactCount}");
+        _output.WriteLine($" • High Fuzzy Matches       : {fuzzyCount}");
+        _output.WriteLine($" • Provisional Sums Shielded: {psCount}");
+        _output.WriteLine($" • Variation Orders (New)   : {voCount}");
+        _output.WriteLine($" • Total Reconciled Value   : {totalReconciledAmount:N0} EGP");
+        _output.WriteLine($" • Processing Duration      : {stopwatch.ElapsedMilliseconds} ms");
+        _output.WriteLine("==========================================================================");
+
+        var unpriced = result.MatchedPairs.Where(p => p.IsVariationOrder).Take(20);
+        _output.WriteLine("Sample of Unpriced / Variation Orders:");
+        foreach (var u in unpriced)
+        {
+            _output.WriteLine($"   Sheet:{u.TargetItem.SheetName} Code:{u.TargetItem.ItemCode} Qty:{u.TargetItem.Quantity} Unit:{u.TargetItem.Unit} Desc:{u.TargetItem.Description[..Math.Min(60, u.TargetItem.Description.Length)]}");
+        }
+
+        try { if (File.Exists(tempDb)) File.Delete(tempDb); } catch { }
+
+        Assert.True(pct >= 80.0, $"Expected at least 80% match on Ras El Hekma, got {pct:F1}%");
+    }
 }

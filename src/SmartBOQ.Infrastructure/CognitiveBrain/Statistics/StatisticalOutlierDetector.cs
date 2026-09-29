@@ -50,8 +50,10 @@ public sealed class StatisticalOutlierDetector
             var item = pricedItems[i];
             double r = rates[i];
 
-            // Modified Z-score calculation: 0.6745 * (x - median) / MAD
-            double modZ = mad > 0.0001 ? 0.6745 * (r - median) / mad : 0.0;
+            // Modified Z-score calculation: 0.6745 * (x - median) / MAD with stdDev fallback when MAD=0
+            double modZ = mad > 0.0001 
+                ? 0.6745 * (r - median) / mad 
+                : (stdDev > 0.0001 ? (r - mean) / stdDev : 0.0);
             bool isOutlier = Math.Abs(modZ) >= 3.5;
 
             // Decimal shift detection: ratio approximately 10x, 100x, or 0.1x of median

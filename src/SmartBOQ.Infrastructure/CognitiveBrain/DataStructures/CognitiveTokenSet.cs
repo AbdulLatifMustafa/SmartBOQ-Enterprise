@@ -169,7 +169,17 @@ public readonly struct CognitiveTokenSet
         ulong hash = FnvOffsetBasis;
         for (int i = 0; i < span.Length; i++)
         {
-            char c = char.ToLowerInvariant(span[i]);
+            char c = span[i];
+
+            // Skip Arabic tatweel and diacritics / tashkeel
+            if (c == 'ـ' || (c >= '\u064B' && c <= '\u065F')) continue;
+
+            // Arabic letter normalization: unify Alef forms, Taa Marbuta, and Yaa
+            if (c is 'أ' or 'إ' or 'آ') c = 'ا';
+            else if (c is 'ة') c = 'ه';
+            else if (c is 'ى') c = 'ي';
+            else c = char.ToLowerInvariant(c);
+
             hash ^= c;
             hash *= FnvPrime;
         }
