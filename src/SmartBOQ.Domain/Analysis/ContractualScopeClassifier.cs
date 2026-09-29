@@ -5,8 +5,8 @@ namespace SmartBOQ.Domain.Analysis;
 
 /// <summary>
 /// Contractual action scope classifier for civil engineering, MEP, infrastructure, and architectural BOQ items.
-/// Distinguishes between Supply (توريد), Installation/Labor (تركيب/مصنعية), Supply & Installation (توريد وتركيب),
-/// and Demolition/Dismantling (فك وإزالة).
+/// Distinguishes between Supply, Installation/Labor, Comprehensive Supply & Installation,
+/// and Demolition/Dismantling/Removal.
 /// Enforces strict mutual exclusivity to prevent massive rate misallocations (e.g. matching 650k equipment supply with 65k labor install).
 /// </summary>
 public static class ContractualScopeClassifier
@@ -34,7 +34,7 @@ public static class ContractualScopeClassifier
         // Mask noun phrases like "power supply", "air supply", "water supply" to prevent false positive supply detection
         string masked = MaskNounPhrases(raw);
 
-        // 2. Explicit "Only" / "فقط" checks
+        // 2. Explicit "Only" checks across English and Arabic keywords
         bool hasSupplyOnly = ContainsAny(masked, 
             "supply only", "furnish only", "equipment only", "materials only", "delivery only", "procurement only",
             "توريد فقط", "شراء فقط", "تجهيز فقط", "مهمات فقط", "مواد فقط");

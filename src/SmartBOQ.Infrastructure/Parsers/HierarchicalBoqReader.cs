@@ -69,10 +69,10 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
                 {
                     rowIndex++;
 
-                    // Scan for dynamic column headers in the first 30 rows
+                    // Scan for dynamic column headers in the first 60 rows
                     if (!headerFound)
                     {
-                        if (rowIndex <= 30)
+                        if (rowIndex <= 60)
                         {
                             int tSn = -1, tItem = -1, tDesc = -1, tQty = -1, tUnit = -1, tRate = -1, tAmt = -1;
                             for (int c = 0; c < reader.FieldCount; c++)
@@ -111,7 +111,7 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
                                 }
                             }
 
-                            if (tUnit >= 0 && (tQty >= 0 || tDesc >= 0))
+                            if ((tUnit >= 0 && (tQty >= 0 || tDesc >= 0)) || (tDesc >= 0 && tQty >= 0 && (tRate >= 0 || tAmt >= 0)))
                             {
                                 if (tItem >= 0) colItem = tItem;
                                 if (tSn >= 0) colSn = tSn;
@@ -132,7 +132,7 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
                         }
                         else
                         {
-                            // If after 30 rows no valid header was found, skip this non-bill sheet
+                            // If after 60 rows no valid header was found, skip this non-bill sheet
                             break;
                         }
                     }

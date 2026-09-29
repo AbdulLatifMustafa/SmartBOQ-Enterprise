@@ -1101,7 +1101,7 @@ static async Task RunMultiFileAccuracyBenchmarkAsync()
     var results = new List<(string SuiteName, bool AutoLinkPass, bool ColumnPass, bool MatchPass, bool FormulaPass, bool CulturePass, int RatesInjected, int ExpectedRates, double Accuracy)>();
 
     // =================================================================
-    // SUITE 1: Arabic Bilingual BOQ (مشروع مقايسة عربية حكومية/تجارية)
+    // SUITE 1: Arabic Bilingual BOQ Benchmark
     // =================================================================
     Console.ForegroundColor = ConsoleColor.Yellow;
     Console.WriteLine("\n>>> [SUITE 1/3] Arabic Bilingual BOQ (مشروع مقايسة عربية كاملة)...");
@@ -1225,7 +1225,7 @@ static async Task RunMultiFileAccuracyBenchmarkAsync()
     }
 
     // =================================================================
-    // SUITE 2: Scrambled / Inverted Columns Order (أعمدة غير قياسية)
+    // SUITE 2: Scrambled / Inverted Columns Order Layout Benchmark
     // =================================================================
     Console.ForegroundColor = ConsoleColor.Yellow;
     Console.WriteLine("\n>>> [SUITE 2/3] Scrambled Columns Layout (أعمدة مبعثرة وغير قياسية للمقاول)...");
@@ -1308,7 +1308,7 @@ static async Task RunMultiFileAccuracyBenchmarkAsync()
     }
 
     // =================================================================
-    // SUITE 3: Noisy Naming & Decimal Codes (اختلاف صيغ التسمية والشرطات)
+    // SUITE 3: Noisy Naming & Decimal Codes Benchmark
     // =================================================================
     Console.ForegroundColor = ConsoleColor.Yellow;
     Console.WriteLine("\n>>> [SUITE 3/3] Naming Noise & Formatting Variations (تسميات غير متطابقة ورموز إضافية)...");
@@ -1493,7 +1493,7 @@ static async Task RunComprehensiveTestSuiteAsync()
         bool mExact = m1.Count == 1 && m1[0].Confidence == MatchConfidence.Exact && m1[0].IsApproved && m1[0].InjectedRate == 45m;
         passedUnits.Add(("Matcher.ExactMatch", "100% exact text and unit reconciliation", mExact));
 
-        // Compatible units across variants (m2 vs sqm vs م2)
+        // Compatible units across multilingual variants (m2 vs sqm vs Arabic square meter)
         var t2 = new BoqItem { Id = "T2", BillNumber = "01", ItemCode = "A", Description = "Granular sub-base layer", Unit = "sqm", Quantity = 500m };
         var s2 = new BoqItem { Id = "S2", BillNumber = "01", ItemCode = "A", Description = "Granular sub-base layer", Unit = "م2", Quantity = 500m, UnitRate = 35m };
         var m2 = await matcher.MatchItemsAsync([t2], [s2]);

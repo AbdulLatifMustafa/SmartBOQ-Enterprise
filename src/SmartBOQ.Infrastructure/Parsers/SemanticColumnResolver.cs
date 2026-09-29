@@ -43,7 +43,7 @@ public static class SemanticColumnResolver
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex HierarchyLevelPattern = new(
-        @"^(level\s*\d+|\d+|division|package|boq\s*name|sub-?boq(\s*name)?|cat\.?|category|sub-?category|المرحلة|الباكج)$",
+        @"^(level\s*\d+|division|package|boq\s*name|sub-?boq(\s*name)?|cat\.?|category|sub-?category|المرحلة|الباكج)$",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex DescriptionPattern = new(
@@ -60,6 +60,16 @@ public static class SemanticColumnResolver
 
     private static readonly Regex RatePattern = new(
         @"(unit\s*rate|unit\s*price|rate|price|net\s*rate|tender\s*rate|p\.?u\.?|(^|\b)u\.?r\.?($|\b)|prix\s*unitaire|سعر\s*الوحدة|الفئة|فئة|السعر|سعر\s*البند|سعر\s*إفرادي|سعر\s*مفرد)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Canonical regex for composite/total unit rates (All-in / Supply + Install combined unit rate)
+    private static readonly Regex CompositeOrTotalRatePattern = new(
+        @"(total\s*(unit\s*)?rate|total\s*(unit\s*)?price|all-?in\s*(unit\s*)?rate|composite\s*rate|overall\s*rate|إجمالي\s*الفئة|إجمالي\s*سعر\s*الوحدة|فئة\s*شاملة|فئة\s*إجمالية|السعر\s*الإجمالي\s*للوحدة|سعر\s*شامل)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Canonical regex for partial or split unit rates (Supply Only, Install Only, Labor Only)
+    private static readonly Regex PartialRatePattern = new(
+        @"(supply\s*(rate|price)|install\s*(rate|price)|erection\s*(rate|price)|material\s*(rate|price)|labor\s*(rate|price)|سعر\s*التوريد|فئة\s*التوريد|سعر\s*التركيب|فئة\s*التركيب|سعر\s*المصنعية)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex AmountPattern = new(
@@ -191,14 +201,24 @@ public static class SemanticColumnResolver
             // Inspect primary header row
             AssignRowColumns(scannedRows[bestRowIdx], ref colRate, ref colAmt, ref colQty, ref colUnit, ref colDesc, ref colCode, ref colSN, ref colBill, ref colSec, hierarchyCols);
 
-            // Inspect adjacent sub-header row (for merged or multi-line table headers)
+            // Inspect adjacent sub-header row (for merged or multi-line table headers) only if it does not contain numeric data
             if (bestRowIdx + 1 < scannedRows.Count)
             {
-                AssignRowColumns(scannedRows[bestRowIdx + 1], ref colRate, ref colAmt, ref colQty, ref colUnit, ref colDesc, ref colCode, ref colSN, ref colBill, ref colSec, hierarchyCols);
+                var nextRow = scannedRows[bestRowIdx + 1];
+                int numericCount = nextRow.Count(val => decimal.TryParse(val, out _));
+                if (numericCount <= 1)
+                {
+                    AssignRowColumns(nextRow, ref colRate, ref colAmt, ref colQty, ref colUnit, ref colDesc, ref colCode, ref colSN, ref colBill, ref colSec, hierarchyCols);
+                }
             }
             if (bestRowIdx > 0)
             {
-                AssignRowColumns(scannedRows[bestRowIdx - 1], ref colRate, ref colAmt, ref colQty, ref colUnit, ref colDesc, ref colCode, ref colSN, ref colBill, ref colSec, hierarchyCols);
+                var prevRow = scannedRows[bestRowIdx - 1];
+                int numericCount = prevRow.Count(val => decimal.TryParse(val, out _));
+                if (numericCount <= 1)
+                {
+                    AssignRowColumns(prevRow, ref colRate, ref colAmt, ref colQty, ref colUnit, ref colDesc, ref colCode, ref colSN, ref colBill, ref colSec, hierarchyCols);
+                }
             }
         }
 
@@ -333,27 +353,45 @@ public static class SemanticColumnResolver
         ref int colSec,
         List<int> hierarchyCols)
     {
+        bool hasCompositeRate = false;
+
         for (int c = 0; c < row.Length; c++)
         {
             string text = row[c];
             if (string.IsNullOrWhiteSpace(text)) continue;
 
-            if ((text.Equals("U.R", StringComparison.OrdinalIgnoreCase) ||
-                 text.Equals("UR", StringComparison.OrdinalIgnoreCase) ||
-                 text.Contains("Uplifted unit rate", StringComparison.OrdinalIgnoreCase) ||
-                 text.Contains("Unit Rate\nUplifted", StringComparison.OrdinalIgnoreCase) ||
-                 text.Contains("CCC Unit Rate Uplifted", StringComparison.OrdinalIgnoreCase) ||
-                 text.Equals("Unit Rate", StringComparison.OrdinalIgnoreCase) ||
-                 text.Equals("Tender Rate", StringComparison.OrdinalIgnoreCase) ||
-                 text.Equals("سعر الوحدة", StringComparison.OrdinalIgnoreCase)) && !text.Contains("total", StringComparison.OrdinalIgnoreCase) && !text.Contains("amount", StringComparison.OrdinalIgnoreCase))
+            bool isCompositeRate = CompositeOrTotalRatePattern.IsMatch(text);
+            bool isPartialRate = PartialRatePattern.IsMatch(text);
+
+            if (isCompositeRate)
             {
-                colRate = c; // Highest fidelity: explicit unit rate column
+                // Composite all-in unit rate (e.g. Total Unit Rate or all-in rate) has highest fidelity
+                colRate = c;
+                hasCompositeRate = true;
             }
-            else if (RatePattern.IsMatch(text) && colRate < 0 && !text.Contains("total", StringComparison.OrdinalIgnoreCase) && !text.Contains("amount", StringComparison.OrdinalIgnoreCase))
+            else if (!hasCompositeRate && (text.Equals("U.R", StringComparison.OrdinalIgnoreCase) ||
+                     text.Equals("UR", StringComparison.OrdinalIgnoreCase) ||
+                     text.Contains("Uplifted unit rate", StringComparison.OrdinalIgnoreCase) ||
+                     text.Contains("Unit Rate\nUplifted", StringComparison.OrdinalIgnoreCase) ||
+                     text.Contains("CCC Unit Rate Uplifted", StringComparison.OrdinalIgnoreCase) ||
+                     text.Equals("Unit Rate", StringComparison.OrdinalIgnoreCase) ||
+                     text.Equals("Tender Rate", StringComparison.OrdinalIgnoreCase) ||
+                     text.Equals("سعر الوحدة", StringComparison.OrdinalIgnoreCase)) && !text.Contains("amount", StringComparison.OrdinalIgnoreCase))
             {
                 colRate = c;
             }
-            else if (AmountPattern.IsMatch(text) && colAmt < 0) colAmt = c;
+            else if (!hasCompositeRate && RatePattern.IsMatch(text) && !text.Contains("amount", StringComparison.OrdinalIgnoreCase))
+            {
+                // If colRate is unassigned or was previously a partial/split rate, prefer this standard rate
+                if (colRate < 0 || !isPartialRate)
+                {
+                    colRate = c;
+                }
+            }
+            else if (AmountPattern.IsMatch(text) && !isCompositeRate && colAmt < 0)
+            {
+                colAmt = c;
+            }
             else if (QuantityPattern.IsMatch(text) && colQty < 0) colQty = c;
             else if (UnitPattern.IsMatch(text) && colUnit < 0 && !text.Contains("rate", StringComparison.OrdinalIgnoreCase) && !text.Contains("price", StringComparison.OrdinalIgnoreCase)) colUnit = c;
             else if (DescriptionPattern.IsMatch(text) && colDesc < 0) colDesc = c;

@@ -338,8 +338,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         catch { }
 
         // Set generous, readable column widths
-        ws.Column(1).Width = 18;  // انتقال للمقايسة
-        ws.Column(2).Width = 26;  // انتقال لمصدر السعر (ملف المقاول)
+        ws.Column(1).Width = 18;  // Jump to Tender Schedule
+        ws.Column(2).Width = 26;  // Jump to Contractor Source Price
         ws.Column(3).Width = 30;  // Sheet / Bill
         ws.Column(4).Width = 10;  // Row
         ws.Column(5).Width = 14;  // Code
@@ -393,13 +393,10 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 sepRange.Style.Font.FontColor = XLColor.FromHtml("#92400E"); // Amber-800
                 sepRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                 sepRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
-                for (int c = 1; c <= 15; c++)
-                {
-                    ws.Cell(rowIdx, c).Style.Border.TopBorder = XLBorderStyleValues.Medium;
-                    ws.Cell(rowIdx, c).Style.Border.TopBorderColor = XLColor.FromHtml("#D97706");
-                    ws.Cell(rowIdx, c).Style.Border.BottomBorder = XLBorderStyleValues.Thin;
-                    ws.Cell(rowIdx, c).Style.Border.BottomBorderColor = XLColor.FromHtml("#D97706");
-                }
+                sepRange.Style.Border.TopBorder = XLBorderStyleValues.Medium;
+                sepRange.Style.Border.TopBorderColor = XLColor.FromHtml("#D97706");
+                sepRange.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+                sepRange.Style.Border.BottomBorderColor = XLColor.FromHtml("#D97706");
                 rowIdx++;
             }
 
@@ -580,26 +577,31 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 statusCell.Style.Font.FontColor = XLColor.FromHtml("#B45309");
             }
 
-            for (int c = 1; c <= 15; c++)
-            {
-                var cell = ws.Cell(rowIdx, c);
-                cell.Style.Fill.BackgroundColor = fillBg;
-                cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
-                cell.Style.Border.OutsideBorderColor = XLColor.FromHtml("#E2E8F0");
-                cell.Style.Font.FontSize = 9;
-                cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
-            }
+            var rowRange = ws.Range(rowIdx, 1, rowIdx, 15);
+            rowRange.Style.Fill.BackgroundColor = fillBg;
 
             if (pair.IsVariationOrder)
             {
-                ws.Row(rowIdx).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFFBEB");
+                rowRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#FFFBEB");
             }
             else if (item.Type == BoqItemType.ProvisionalSum)
             {
-                ws.Row(rowIdx).Style.Fill.BackgroundColor = XLColor.FromHtml("#FEF3C7");
+                rowRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#FEF3C7");
             }
 
             rowIdx++;
+        }
+
+        // Apply bulk typography, alignment, and borders to minimize memory footprint
+        if (rowIdx > headerRow + 1)
+        {
+            var dataRange = ws.Range(headerRow + 1, 1, rowIdx - 1, 15);
+            dataRange.Style.Font.FontSize = 9;
+            dataRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+            dataRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            dataRange.Style.Border.InsideBorderColor = XLColor.FromHtml("#E2E8F0");
+            dataRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            dataRange.Style.Border.OutsideBorderColor = XLColor.FromHtml("#CBD5E1");
         }
 
         // Enable AutoFilter on table header
@@ -689,8 +691,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         }
         catch { }
 
-        ws.Column(1).Width = 18;  // انتقال للمقايسة
-        ws.Column(2).Width = 26;  // فتح وتحديد سعر المقاول
+        ws.Column(1).Width = 18;  // Jump to Tender Schedule
+        ws.Column(2).Width = 26;  // Open and locate Contractor Rate
         ws.Column(3).Width = 28;  // Tender Sheet
         ws.Column(4).Width = 10;  // Tender Row
         ws.Column(5).Width = 14;  // Tender Code
@@ -913,17 +915,20 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             ws.Cell(rowIdx, 16).Value = confText;
             ws.Cell(rowIdx, 16).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
 
-            for (int c = 1; c <= 16; c++)
-            {
-                var cell = ws.Cell(rowIdx, c);
-                cell.Style.Fill.BackgroundColor = fillBg;
-                cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
-                cell.Style.Border.OutsideBorderColor = XLColor.FromHtml("#E2E8F0");
-                cell.Style.Font.FontSize = 9;
-                cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
-            }
-
+            ws.Range(rowIdx, 1, rowIdx, 16).Style.Fill.BackgroundColor = fillBg;
             rowIdx++;
+        }
+
+        // Apply bulk typography, alignment, and borders to minimize memory footprint
+        if (rowIdx > headerRow + 1)
+        {
+            var dataRange = ws.Range(headerRow + 1, 1, rowIdx - 1, 16);
+            dataRange.Style.Font.FontSize = 9;
+            dataRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+            dataRange.Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            dataRange.Style.Border.InsideBorderColor = XLColor.FromHtml("#E2E8F0");
+            dataRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            dataRange.Style.Border.OutsideBorderColor = XLColor.FromHtml("#CBD5E1");
         }
 
         try

@@ -79,16 +79,16 @@ public enum ContractualActionScope
     /// <summary>Unspecified or generic scope.</summary>
     Generic = 0,
 
-    /// <summary>Supply / materials / equipment only (توريد فقط).</summary>
+    /// <summary>Supply, materials, or equipment only.</summary>
     SupplyOnly = 1,
 
-    /// <summary>Installation / erection / labor only (تركيب / مصنعية فقط).</summary>
+    /// <summary>Installation, erection, or labor only.</summary>
     InstallOnly = 2,
 
-    /// <summary>Comprehensive supply and installation (توريد وتركيب).</summary>
+    /// <summary>Comprehensive supply and installation.</summary>
     SupplyAndInstall = 3,
 
-    /// <summary>Demolition, dismantling, removal, or salvage (فك وإزالة وتكسير).</summary>
+    /// <summary>Demolition, dismantling, removal, or salvage.</summary>
     Dismantle = 4
 }
 

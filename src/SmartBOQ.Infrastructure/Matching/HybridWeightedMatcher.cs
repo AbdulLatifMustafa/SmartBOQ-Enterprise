@@ -769,7 +769,7 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
     {
         if (string.IsNullOrWhiteSpace(key)) return string.Empty;
 
-        // Normalize Arabic ordinal words to canonical digits first (e.g. "الباب الأول" -> "الباب 1")
+        // Normalize Arabic ordinal words to canonical digits first (e.g. First -> 1, Second -> 2)
         string normalizedKey = key
             .Replace("الأول", "1", StringComparison.OrdinalIgnoreCase)
             .Replace("الاول", "1", StringComparison.OrdinalIgnoreCase)
@@ -795,7 +795,7 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
             .Replace("العاشر", "10", StringComparison.OrdinalIgnoreCase)
             .Replace("عاشر", "10", StringComparison.OrdinalIgnoreCase);
 
-        // Pattern 1: Find "bill" or Arabic "الباب"/"جدول" followed by numbers
+        // Pattern 1: Find "bill" or Arabic bill keywords followed by numbers
         var match = Regex.Match(normalizedKey, @"(?:bill|الباب|جدول)(\d+[a-z]*)", RegexOptions.IgnoreCase);
         if (match.Success)
         {

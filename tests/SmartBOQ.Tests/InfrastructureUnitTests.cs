@@ -61,7 +61,7 @@ public class InfrastructureUnitTests
         var hashes1 = SpanTokenizer.ExtractSortedTokenHashes("أعمال الخرسانة المسلحة".AsSpan());
         var hashes2 = SpanTokenizer.ExtractSortedTokenHashes("خرسانة مسلحة".AsSpan());
 
-        // Both should share token hashes for خرسانة and مسلحة despite 'ال' and 'أعمال'
+        // Both should share token hashes for reinforced concrete keywords despite prefixes and noise words
         double jaccard = SpanTokenizer.CalculateSortedJaccard(hashes1, hashes2);
         Assert.True(jaccard > 0.40);
     }
@@ -143,5 +143,40 @@ public class InfrastructureUnitTests
         var link6 = links.First(l => l.TargetSheetName.Contains("السادس"));
         Assert.True(link6.IsProvisionalSum);
         Assert.Equal(SheetLinkStatus.ShieldedPS, link6.Status);
+    }
+
+    [Fact]
+    public void SemanticColumnResolver_PrioritizesCompositeRateOverSplitRates()
+    {
+        // Tests intelligent routing when contractor sheet splits rates into Supply and Install plus Total Unit Rate
+        var scannedRows = new List<string[]>
+        {
+            new[] { "Item", "Description", "Unit", "Qty", "Supply Rate", "Install Rate", "Total Unit Rate", "Total Amount" },
+            new[] { "1", "High-pressure valve supply and install", "item", "10", "450.00", "50.00", "500.00", "5000.00" }
+        };
+
+        var resolved = SemanticColumnResolver.ResolveColumnsFromRows(scannedRows, 8);
+
+        Assert.Equal(0, resolved.ItemCodeColumn);
+        Assert.Equal(1, resolved.DescriptionColumn);
+        Assert.Equal(2, resolved.UnitColumn);
+        Assert.Equal(3, resolved.QuantityColumn);
+        Assert.Equal(6, resolved.RateColumn);        // Must pick "Total Unit Rate" (Col 6), not Supply Rate (Col 4)
+        Assert.Equal(7, resolved.TotalAmountColumn); // Must pick "Total Amount" (Col 7)
+    }
+
+    [Theory]
+    [InlineData("Bill 01 - Summary of Earthworks", false)]
+    [InlineData("جدول 02 - ملخص أعمال البنية التحتية", false)]
+    [InlineData("Package A - Summary of Concrete", false)]
+    [InlineData("Grand Summary", true)]
+    [InlineData("ملخص عام للمشروع", true)]
+    [InlineData("Table of Contents", true)]
+    public void BaseBoqReader_IsNonBillSheet_PreservesActiveBillsWithSummaryNames(string sheetName, bool expectedIsNonBill)
+    {
+        var method = typeof(BaseBoqReader).GetMethod("IsNonBillSheet", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+        bool actual = (bool)method.Invoke(null, new object[] { sheetName })!;
+        Assert.Equal(expectedIsNonBill, actual);
     }
 }

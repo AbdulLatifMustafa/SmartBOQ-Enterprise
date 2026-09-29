@@ -13,7 +13,7 @@ public enum DimensionClass
     Length = 3,     // m, lm, km, mm, inch
     Weight = 4,     // ton, kg, lb
     Count = 5,      // no, ea, nr, pcs, set, pair
-    LumpSum = 6,    // ls, sum, item, job, مقطوعية
+    LumpSum = 6,    // ls, sum, item, job, lump-sum
     Time = 7,       // month, day, hr, wk
     Power = 8       // kw, kva, hp, mw
 }

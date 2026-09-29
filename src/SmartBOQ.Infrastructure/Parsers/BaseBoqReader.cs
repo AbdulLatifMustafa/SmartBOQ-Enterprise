@@ -49,17 +49,39 @@ public abstract class BaseBoqReader : IBoqReader
     {
         if (string.IsNullOrWhiteSpace(sheetName)) return true;
         string trimmed = sheetName.Trim();
+
+        // If the sheet explicitly identifies as an active Bill or Schedule, do not treat as non-bill
+        bool isExplicitBill = trimmed.StartsWith("Bill", StringComparison.OrdinalIgnoreCase) ||
+                             trimmed.StartsWith("Schedule", StringComparison.OrdinalIgnoreCase) ||
+                             trimmed.StartsWith("Package", StringComparison.OrdinalIgnoreCase) ||
+                             trimmed.StartsWith("الباب", StringComparison.OrdinalIgnoreCase) ||
+                             trimmed.StartsWith("جدول", StringComparison.OrdinalIgnoreCase) ||
+                             trimmed.StartsWith("قسم", StringComparison.OrdinalIgnoreCase);
+
+        if (isExplicitBill)
+        {
+            // Only non-bill if it's explicitly a grand/general summary bill
+            return trimmed.Contains("Grand Summary", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Contains("Executive Summary", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Contains("الملخص العام", StringComparison.OrdinalIgnoreCase) ||
+                   trimmed.Contains("ملخص عام", StringComparison.OrdinalIgnoreCase);
+        }
+
         foreach (var p in SharedNonBillPrefixes)
         {
             if (trimmed.StartsWith(p, StringComparison.OrdinalIgnoreCase)) return true;
         }
-        return trimmed.Contains("Summary", StringComparison.OrdinalIgnoreCase) ||
+
+        return trimmed.Equals("Summary", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Equals("ملخص", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("Grand Summary", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("ملخص عام", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("الملخص العام", StringComparison.OrdinalIgnoreCase) ||
                trimmed.Contains("Preamble", StringComparison.OrdinalIgnoreCase) ||
                trimmed.Contains("QTY Notes", StringComparison.OrdinalIgnoreCase) ||
                trimmed.Equals("Notes", StringComparison.OrdinalIgnoreCase) ||
                trimmed.Equals("Note", StringComparison.OrdinalIgnoreCase) ||
-               trimmed.Contains("ملاحظات", StringComparison.OrdinalIgnoreCase) ||
-               trimmed.Contains("ملخص", StringComparison.OrdinalIgnoreCase);
+               trimmed.Contains("ملاحظات", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -115,7 +137,7 @@ public abstract class BaseBoqReader : IBoqReader
 
     /// <summary>
     /// Parses any numeric or string object into a high-precision decimal.
-    /// Resiliently handles Eastern Arabic numerals (٠-٩), Persian digits (۰-۹), currency codes/symbols,
+    /// Resiliently handles Eastern Arabic numerals, Persian digits, currency codes/symbols,
     /// European comma decimal formats, and Excel formula error tokens (#VALUE!, #N/A, -).
     /// </summary>
     public static decimal ParseDecimal(object? val)

@@ -510,7 +510,7 @@ public sealed class BoqInspectorService : IBoqInspector
         if (string.IsNullOrWhiteSpace(sheetName) || IsNonBillSheet(sheetName)) 
             return "-";
 
-        // 1. Explicit keyword match: "Bill 01", "Bill 1A", "Bill 06.1A", "Schedule 2", "الباب الأول", "جدول 3"
+        // 1. Explicit keyword match: "Bill 01", "Bill 1A", "Bill 06.1A", "Schedule 2", or Arabic bill keywords
         var matchKeyword = System.Text.RegularExpressions.Regex.Match(sheetName, @"(?:Bill|Schedule|Package|الباب|جدول)\s*([0-9]+(?:\.[0-9]+)?[a-zA-Z]*|[a-zA-Z][0-9]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         if (matchKeyword.Success)
         {
@@ -535,7 +535,7 @@ public sealed class BoqInspectorService : IBoqInspector
             }
         }
 
-        // 4. Arabic ordinal word conversion (e.g. "الباب الأول" -> "1", "الباب الثاني" -> "2")
+        // 4. Arabic ordinal word conversion (e.g. First -> "1", Second -> "2")
         if (sheetName.Contains("الأول", StringComparison.OrdinalIgnoreCase) || sheetName.Contains("الاول", StringComparison.OrdinalIgnoreCase)) return "1";
         if (sheetName.Contains("الثاني", StringComparison.OrdinalIgnoreCase) || sheetName.Contains("الثانى", StringComparison.OrdinalIgnoreCase)) return "2";
         if (sheetName.Contains("الثالث", StringComparison.OrdinalIgnoreCase)) return "3";
@@ -603,7 +603,7 @@ public sealed class BoqInspectorService : IBoqInspector
         string name = fileName.ToLowerInvariant();
 
         // 2. High-priority Contractor / Pricing signatures:
-        // Keywords like Candy, CCS, Priced, مسعر, تسعير, عرض سعر indicate pricing data source.
+        // Keywords like Candy, CCS, Priced, quotation, or Arabic pricing terms indicate pricing data source.
         bool hasExplicitContractorKeyword = name.Contains("candy") ||
                                             name.Contains("ccs") ||
                                             name.Contains("priced") ||
