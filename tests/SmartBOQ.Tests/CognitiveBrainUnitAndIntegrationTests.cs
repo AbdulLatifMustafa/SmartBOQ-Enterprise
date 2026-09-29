@@ -324,6 +324,45 @@ public class CognitiveBrainUnitAndIntegrationTests
         Assert.Equal(65000m, results[1].InjectedRate);
     }
 
+    [Fact]
+    public async Task Integration_ElectricalAndConsultantBoq_MatchesWithHighFidelityAndPreservesScope()
+    {
+        string elecPath = @"C:\Users\BodyBoy\Desktop\logs\BOQs\Electrical.xlsx";
+        string targetPath = @"C:\Users\BodyBoy\Desktop\logs\BOQs\BOQs\09_E_2   Infra- Phase 1_Rev_02.xlsx";
+        if (!System.IO.File.Exists(elecPath) || !System.IO.File.Exists(targetPath)) return;
+
+        var reader = new SmartBOQ.Infrastructure.Parsers.UniversalAdaptiveBoqReader();
+        var consultantReader = new SmartBOQ.Infrastructure.Parsers.HierarchicalBoqReader();
+        var elecItems = await reader.ReadContractorFlatBoqAsync(elecPath);
+        var targetSheets = await consultantReader.ReadConsultantHierarchicalBoqAsync(targetPath);
+        var targetItems = targetSheets.SelectMany(s => s.Items).ToList();
+
+        var d28Targets = targetItems.Where(t => t.SheetName.Contains("Act. Comp. D28") || t.BillNumber.Contains("Act. Comp. D28")).ToList();
+        Assert.True(elecItems.Count > 0);
+        Assert.True(d28Targets.Count > 0);
+
+        var brain = new CognitiveAdaptiveBrain();
+        var pairs = await brain.MatchItemsAsync(d28Targets, elecItems, sensitivity: 0.70);
+
+        var match22 = pairs.FirstOrDefault(p => p.TargetItem.AnchorRowIndex == 22);
+        var match26 = pairs.FirstOrDefault(p => p.TargetItem.AnchorRowIndex == 26);
+
+        // Row 22 is Supply Main Access Control Panel (~655k)
+        Assert.NotNull(match22);
+        Assert.NotNull(match22.MatchedSourceItem);
+        Assert.Equal(655173.78m, match22.InjectedRate);
+        Assert.True(match22.SimilarityScore >= 0.90);
+
+        // Row 26 is Install Main Access Control Panel (~65k)
+        Assert.NotNull(match26);
+        Assert.NotNull(match26.MatchedSourceItem);
+        Assert.Equal(65517.38m, match26.InjectedRate);
+        Assert.True(match26.SimilarityScore >= 0.90);
+
+        // Ensure 100% of D28 items matched successfully
+        Assert.Equal(d28Targets.Count, pairs.Count(p => p.MatchedSourceItem != null));
+    }
+
     private static BoqItem CreatePricedItem(string code, string desc, decimal qty, decimal rate)
     {
         return new BoqItem

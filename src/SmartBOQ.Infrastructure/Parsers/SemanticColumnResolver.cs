@@ -291,15 +291,16 @@ public static class SemanticColumnResolver
             }
         }
 
-        if (colCode < 0 && colSN >= 0) colCode = colSN;
-        if (colSN < 0 && colCode >= 0) colSN = colCode;
+        if (colCode < 0 && colSN >= 0 && !hierarchyCols.Contains(colSN)) colCode = colSN;
+        if (colSN < 0 && colCode >= 0 && !hierarchyCols.Contains(colCode)) colSN = colCode;
 
         if (colDesc < 0) colDesc = 2;
         if (colQty < 0) colQty = 4;
         if (colUnit < 0) colUnit = 5;
         if (colRate < 0) colRate = 6;
         if (colAmt < 0) colAmt = 7;
-        if (colCode < 0) colCode = 0;
+        if (colCode < 0 && !hierarchyCols.Contains(0)) colCode = 0;
+        if (colCode >= 0 && hierarchyCols.Contains(colCode)) colCode = -1;
 
         return new ResolvedBoqColumns
         {

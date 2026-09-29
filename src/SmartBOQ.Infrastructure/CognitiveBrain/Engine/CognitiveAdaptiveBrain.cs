@@ -235,7 +235,8 @@ public sealed class CognitiveAdaptiveBrain : IItemMatcher
         double scopeMultiplier = SmartBOQ.Domain.Analysis.ContractualScopeClassifier.GetScopeCompatibilityMultiplier(target.Scope, source.Scope);
 
         double codeScore = 0.0;
-        if (!string.IsNullOrEmpty(target.NormalizedCode) && !string.IsNullOrEmpty(source.NormalizedCode))
+        bool hasBothCodes = !string.IsNullOrEmpty(target.NormalizedCode) && !string.IsNullOrEmpty(source.NormalizedCode);
+        if (hasBothCodes)
         {
             if (target.NormalizedCode.Equals(source.NormalizedCode, StringComparison.OrdinalIgnoreCase))
             {
@@ -251,7 +252,11 @@ public sealed class CognitiveAdaptiveBrain : IItemMatcher
         // Token coverage & Jaccard overlap
         double tokenCoverage = target.Tokens.CalculateTokenCoverage(source.TokenSet);
         double jaccard = target.Tokens.CalculateJaccard(source.TokenSet);
-        double descScore = (tokenCoverage * 0.7) + (jaccard * 0.3);
+        double descScore = (tokenCoverage * 0.75) + (jaccard * 0.25);
+        if (tokenCoverage >= 0.80)
+        {
+            descScore = Math.Max(descScore, tokenCoverage * 0.95);
+        }
 
         // Unit dimensional compatibility
         double unitScore = (target.Dimension != DimensionClass.Unknown && target.Dimension == source.UnitDimension) ? 1.0 : 0.4;
@@ -275,14 +280,17 @@ public sealed class CognitiveAdaptiveBrain : IItemMatcher
             priceScore = 1.0;
         }
 
-        double totalScore = (codeScore * profile.WeightCode) +
-                            (descScore * profile.WeightDescription) +
+        double effWeightCode = hasBothCodes ? profile.WeightCode : 0.0;
+        double effWeightDesc = hasBothCodes ? profile.WeightDescription : (profile.WeightDescription + profile.WeightCode);
+
+        double totalScore = (codeScore * effWeightCode) +
+                            (descScore * effWeightDesc) +
                             (unitScore * profile.WeightUnit) +
                             (qtyScore * profile.WeightQuantity) +
                             (priceScore * profile.WeightPriceHarmony);
 
         // Code exact match bonus
-        if (codeScore >= 0.95 && descScore >= 0.40)
+        if (hasBothCodes && codeScore >= 0.95 && descScore >= 0.40)
         {
             totalScore += 0.20;
         }

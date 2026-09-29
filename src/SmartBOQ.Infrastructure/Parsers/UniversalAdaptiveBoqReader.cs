@@ -160,7 +160,7 @@ public class UniversalAdaptiveBoqReader : BaseBoqReader
 
                     string note = resolvedCols.NoteColumn >= 0 ? getStr(resolvedCols.NoteColumn) : string.Empty;
 
-                    if (string.IsNullOrWhiteSpace(description) && string.IsNullOrWhiteSpace(itemCode) && rate == 0m && qty == 0m)
+                    if (string.IsNullOrWhiteSpace(description) && rate == 0m && qty == 0m)
                     {
                         return;
                     }
@@ -179,7 +179,7 @@ public class UniversalAdaptiveBoqReader : BaseBoqReader
                     }
 
                     // Context accumulation: If row has descriptive text but no qty and no rate
-                    if (string.IsNullOrWhiteSpace(itemCode) && qty == 0m && rate == 0m && total == 0m && !string.IsNullOrWhiteSpace(description))
+                    if (qty == 0m && rate == 0m && total == 0m && !string.IsNullOrWhiteSpace(description))
                     {
                         if (description.StartsWith("SECTION", StringComparison.OrdinalIgnoreCase) || 
                             description.StartsWith("BILL NO", StringComparison.OrdinalIgnoreCase) ||
