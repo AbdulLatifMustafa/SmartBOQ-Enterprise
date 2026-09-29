@@ -81,7 +81,7 @@ public interface IBoqExporter
         string outputFilePath,
         IReadOnlyList<BoqMatchedPair> matchedPairs,
         string? sourceContractorFilePath,
-        bool enableDynamicLinking = true,
+        bool enableDynamicLinking = false,
         IProgress<int>? progress = null,
         CancellationToken ct = default);
 }

@@ -280,7 +280,7 @@ var exportProgress = new Progress<int>(pct =>
 });
 
 var exportSw = Stopwatch.StartNew();
-await reconciliationService.ExportPricedScheduleAsync(fileB, outputFile, result.MatchedPairs, fileA, enableDynamicLinking: true, exportProgress);
+await reconciliationService.ExportPricedScheduleAsync(fileB, outputFile, result.MatchedPairs, fileA, enableDynamicLinking: false, exportProgress);
 exportSw.Stop();
 
 Console.ForegroundColor = ConsoleColor.Green;
@@ -658,7 +658,7 @@ static async Task RunDeepIntelligentMergeTestAsync(string fileA, string fileB, s
     }
 
     sw.Restart();
-    await reconciliationService.ExportPricedScheduleAsync(fileB, outputFile, recResult.MatchedPairs, fileA, enableDynamicLinking: true, null);
+    await reconciliationService.ExportPricedScheduleAsync(fileB, outputFile, recResult.MatchedPairs, fileA, enableDynamicLinking: false, null);
     sw.Stop();
 
     var fi = new FileInfo(outputFile);
@@ -1183,7 +1183,7 @@ static async Task RunMultiFileAccuracyBenchmarkAsync()
         var service = new BoqReconciliationService(gate, flatR, hierR, matcher, exporter, repo, inspector);
 
         var recResult = await service.ReconcileAsync(srcFile, tgtFile, 0.85);
-        await service.ExportPricedScheduleAsync(tgtFile, outFile, recResult.MatchedPairs, srcFile, enableDynamicLinking: true);
+        await service.ExportPricedScheduleAsync(tgtFile, outFile, recResult.MatchedPairs, srcFile, enableDynamicLinking: false);
 
         // Audit Result
         using var wbCheck = new ClosedXML.Excel.XLWorkbook(outFile);
@@ -1279,7 +1279,7 @@ static async Task RunMultiFileAccuracyBenchmarkAsync()
         var service = new BoqReconciliationService(gate, flatR, hierR, matcher, exporter, repo, inspector);
 
         var recResult = await service.ReconcileAsync(srcFile, tgtFile, 0.85);
-        await service.ExportPricedScheduleAsync(tgtFile, outFile, recResult.MatchedPairs, srcFile, enableDynamicLinking: true);
+        await service.ExportPricedScheduleAsync(tgtFile, outFile, recResult.MatchedPairs, srcFile, enableDynamicLinking: false);
 
         using var wbCheck = new ClosedXML.Excel.XLWorkbook(outFile);
         int injected = 0;
@@ -1360,7 +1360,7 @@ static async Task RunMultiFileAccuracyBenchmarkAsync()
         var service = new BoqReconciliationService(gate, flatR, hierR, matcher, exporter, repo, inspector);
 
         var recResult = await service.ReconcileAsync(srcFile, tgtFile, 0.85);
-        await service.ExportPricedScheduleAsync(tgtFile, outFile, recResult.MatchedPairs, srcFile, enableDynamicLinking: true);
+        await service.ExportPricedScheduleAsync(tgtFile, outFile, recResult.MatchedPairs, srcFile, enableDynamicLinking: false);
 
         using var wbCheck = new ClosedXML.Excel.XLWorkbook(outFile);
         int injected = 0;

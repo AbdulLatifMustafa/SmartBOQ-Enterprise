@@ -36,7 +36,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         string outputFilePath,
         IReadOnlyList<BoqMatchedPair> matchedPairs,
         string? sourceContractorFilePath,
-        bool enableDynamicLinking = true,
+        bool enableDynamicLinking = false,
         IProgress<int>? progress = null,
         CancellationToken ct = default)
     {
@@ -107,7 +107,14 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
                         if (pair.IsApproved && pair.InjectedRate.HasValue)
                         {
-                            // Write numeric rate value (overwrites any obsolete external template formula while preserving cell style)
+                            // Clear obsolete template formula and contents to ensure clean numerical rate
+                            if (rateCell.HasFormula)
+                            {
+                                rateCell.FormulaA1 = string.Empty;
+                            }
+                            rateCell.Clear(XLClearOptions.Contents);
+
+                            // Write clean numeric rate value while preserving cell styling
                             rateCell.Value = (double)pair.InjectedRate.Value;
                         }
                         else if (rateCell.HasFormula)
@@ -118,12 +125,36 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                         else if (pair.TargetItem.OriginalRate.HasValue)
                         {
                             // Preserve approved baseline rate in target cell
+                            if (rateCell.HasFormula)
+                            {
+                                rateCell.FormulaA1 = string.Empty;
+                            }
+                            rateCell.Clear(XLClearOptions.Contents);
                             rateCell.Value = (double)pair.TargetItem.OriginalRate.Value;
                         }
                         else
                         {
                             // Clear rate cell only for unpriced items without formulas
                             rateCell.Clear(XLClearOptions.Contents);
+                        }
+                    }
+
+                    // Ensure Rate and Amount columns have sufficient width to avoid '####' display in Excel
+                    var modifiedCols = new HashSet<int>();
+                    foreach (var pair in group)
+                    {
+                        int rCol = pair.TargetItem.RateColumnIndex > 0 ? pair.TargetItem.RateColumnIndex : 7;
+                        modifiedCols.Add(rCol);
+                        int aCol = pair.TargetItem.AmountColumnIndex > 0 ? pair.TargetItem.AmountColumnIndex : rCol + 1;
+                        modifiedCols.Add(aCol);
+                    }
+
+                    foreach (int colIdx in modifiedCols)
+                    {
+                        var col = ws.Column(colIdx);
+                        if (col.Width < 16.0)
+                        {
+                            col.Width = 16.0;
                         }
                     }
 

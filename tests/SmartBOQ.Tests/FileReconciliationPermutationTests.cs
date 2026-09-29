@@ -78,7 +78,7 @@ public class FileReconciliationPermutationTests : IDisposable
 
         var service = CreateReconciliationService("p1.db");
         var result = await service.ReconcileAsync(srcFile, tgtFile, 0.85);
-        await service.ExportPricedScheduleAsync(tgtFile, outFile, result.MatchedPairs, srcFile, enableDynamicLinking: true);
+        await service.ExportPricedScheduleAsync(tgtFile, outFile, result.MatchedPairs, srcFile, enableDynamicLinking: false);
 
         // Verification
         using var wbCheck = new XLWorkbook(outFile);
@@ -129,7 +129,7 @@ public class FileReconciliationPermutationTests : IDisposable
 
         var service = CreateReconciliationService("p2.db");
         var result = await service.ReconcileAsync(srcFile, tgtFile, 0.85);
-        await service.ExportPricedScheduleAsync(tgtFile, outFile, result.MatchedPairs, srcFile, enableDynamicLinking: true);
+        await service.ExportPricedScheduleAsync(tgtFile, outFile, result.MatchedPairs, srcFile, enableDynamicLinking: false);
 
         using var wbCheck = new XLWorkbook(outFile);
         var ws1Check = wbCheck.Worksheet("الباب الأول - أعمال الحفر");
@@ -183,7 +183,7 @@ public class FileReconciliationPermutationTests : IDisposable
 
         var service = CreateReconciliationService("p3.db");
         var result = await service.ReconcileAsync(srcFile, tgtFile, 0.85);
-        await service.ExportPricedScheduleAsync(tgtFile, outFile, result.MatchedPairs, srcFile, enableDynamicLinking: true);
+        await service.ExportPricedScheduleAsync(tgtFile, outFile, result.MatchedPairs, srcFile, enableDynamicLinking: false);
 
         using var wbCheck = new XLWorkbook(outFile);
         var wsCheck1 = wbCheck.Worksheet("Bill 02A - 3BR Villa East");
@@ -248,7 +248,7 @@ public class FileReconciliationPermutationTests : IDisposable
             links,
             columnMappings: null);
 
-        await service.ExportPricedScheduleAsync(tgtFile, outFile, result.MatchedPairs, srcEarthworks, enableDynamicLinking: true);
+        await service.ExportPricedScheduleAsync(tgtFile, outFile, result.MatchedPairs, srcEarthworks, enableDynamicLinking: false);
 
         using var wbCheck = new XLWorkbook(outFile);
         var wsEarth = wbCheck.Worksheet("Bill 01 - Earthworks");

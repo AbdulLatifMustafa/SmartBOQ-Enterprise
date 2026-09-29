@@ -363,6 +363,51 @@ public class CognitiveBrainUnitAndIntegrationTests
         Assert.Equal(d28Targets.Count, pairs.Count(p => p.MatchedSourceItem != null));
     }
 
+    [Fact]
+    public async Task Integration_ExportCaravanBoq_ProducesCleanNumbersWithoutFormulasOrPoundSigns()
+    {
+        string templatePath = @"C:\Users\BodyBoy\Desktop\logs\BOQs\BOQs\07_E_1_2  Design Build Fixed CCTV Caravan_Rev_02.xlsx";
+        string elecPath = @"C:\Users\BodyBoy\Desktop\logs\BOQs\Electrical.xlsx";
+        if (!System.IO.File.Exists(templatePath) || !System.IO.File.Exists(elecPath)) return;
+
+        var consultantReader = new SmartBOQ.Infrastructure.Parsers.HierarchicalBoqReader();
+        var contractorReader = new SmartBOQ.Infrastructure.Parsers.UniversalAdaptiveBoqReader();
+        var targetSheets = await consultantReader.ReadConsultantHierarchicalBoqAsync(templatePath);
+        var targetItems = targetSheets.SelectMany(s => s.Items).ToList();
+        var elecItems = await contractorReader.ReadContractorFlatBoqAsync(elecPath);
+
+        var brain = new CognitiveAdaptiveBrain();
+        var pairs = await brain.MatchItemsAsync(targetItems, elecItems, sensitivity: 0.70);
+
+        string testOutPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "Caravan_Export_Test_Clean.xlsx");
+        var exporter = new SmartBOQ.Infrastructure.Export.ClosedXmlExporter();
+        await exporter.ExportPricedBoqAsync(templatePath, testOutPath, pairs, elecPath, enableDynamicLinking: false);
+
+        using var wb = new ClosedXML.Excel.XLWorkbook(testOutPath);
+        var ws = wb.Worksheets.FirstOrDefault(w => w.Name.Contains("Elec") && w.Name.Contains("26")) ?? wb.Worksheet(1);
+        var colF = ws.Column(6);
+        var colG = ws.Column(7);
+        var cell14F = ws.Cell("F14");
+        var cell14G = ws.Cell("G14");
+        var cell24F = ws.Cell("F24");
+
+        // 1. Column Width MUST be at least 16 to fit 6-figure and 7-figure numbers without '####'
+        Assert.True(colF.Width >= 16.0, $"Column F width ({colF.Width}) should be >= 16 to prevent '####'");
+        Assert.True(colG.Width >= 16.0, $"Column G width ({colG.Width}) should be >= 16 to prevent '####'");
+
+        // 2. F14 MUST contain clean numeric rate (264,679.56) without obsolete formula
+        Assert.False(cell14F.HasFormula, "Cell F14 must NOT have any formula");
+        Assert.Equal(264679.56, cell14F.GetDouble(), 2);
+
+        // 3. F24 MUST contain clean numeric rate (132,507.26) without obsolete formula
+        Assert.False(cell24F.HasFormula, "Cell F24 must NOT have any formula");
+        Assert.Equal(132507.26, cell24F.GetDouble(), 2);
+
+        // 4. Verify rates are completely numeric with no formula strings
+        Assert.True(cell14F.DataType == ClosedXML.Excel.XLDataType.Number, "Cell F14 must be a Number");
+        Assert.True(cell24F.DataType == ClosedXML.Excel.XLDataType.Number, "Cell F24 must be a Number");
+    }
+
     private static BoqItem CreatePricedItem(string code, string desc, decimal qty, decimal rate)
     {
         return new BoqItem
