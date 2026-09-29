@@ -30,7 +30,19 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         IProgress<int>? progress = null,
         CancellationToken ct = default)
     {
-        return ExportPricedBoqAsync(templateFilePath, outputFilePath, matchedPairs, null, enableDynamicLinking: false, progress, ct);
+        return ExportPricedBoqAsync(templateFilePath, outputFilePath, matchedPairs, null, enableDynamicLinking: false, null, null, progress, ct);
+    }
+
+    public override Task ExportPricedBoqAsync(
+        string templateFilePath,
+        string outputFilePath,
+        IReadOnlyList<BoqMatchedPair> matchedPairs,
+        string? sourceContractorFilePath,
+        bool enableDynamicLinking = false,
+        IProgress<int>? progress = null,
+        CancellationToken ct = default)
+    {
+        return ExportPricedBoqAsync(templateFilePath, outputFilePath, matchedPairs, sourceContractorFilePath, enableDynamicLinking, null, null, progress, ct);
     }
 
     public override async Task ExportPricedBoqAsync(
@@ -38,7 +50,9 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         string outputFilePath,
         IReadOnlyList<BoqMatchedPair> matchedPairs,
         string? sourceContractorFilePath,
-        bool enableDynamicLinking = false,
+        bool enableDynamicLinking,
+        IEnumerable<string>? knownContractorFilePaths,
+        IEnumerable<string>? knownTargetFilePaths,
         IProgress<int>? progress = null,
         CancellationToken ct = default)
     {
@@ -190,7 +204,14 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 // Step 6: Inject relative dynamic links if dynamic linking is enabled
                 if (enableDynamicLinking)
                 {
-                    InjectRelativeDynamicLinks(outputFilePath, sourceContractorFilePath, matchedPairs, originalTemplateFormulas);
+                    InjectRelativeDynamicLinks(
+                        outputFilePath,
+                        sourceContractorFilePath,
+                        matchedPairs,
+                        originalTemplateFormulas,
+                        knownContractorFilePaths,
+                        knownTargetFilePaths,
+                        templateFilePath);
                 }
 
                 // Step 7: Post-save OpenXML Archive Sanitization to guarantee 0 repair warnings
@@ -1022,7 +1043,10 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         string outputZipPath,
         string? sourceContractorFilePath,
         IReadOnlyList<BoqMatchedPair> matchedPairs,
-        IReadOnlyDictionary<string, string>? originalTemplateFormulas = null)
+        IReadOnlyDictionary<string, string>? originalTemplateFormulas = null,
+        IEnumerable<string>? knownContractorFilePaths = null,
+        IEnumerable<string>? knownTargetFilePaths = null,
+        string? originalTemplateFilePath = null)
     {
         if (!File.Exists(outputZipPath)) return;
 
@@ -1030,6 +1054,108 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         string? primarySourceFileName = !string.IsNullOrWhiteSpace(sourceContractorFilePath)
             ? Path.GetFileName(sourceContractorFilePath)
             : null;
+
+        // Dynamic Adaptive Classification Sets (Zero Hardcoded File Names)
+        var contractorFilesSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var targetFilesSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // 1. Populate contractorFilesSet from known contractor paths & matched pairs
+        if (!string.IsNullOrWhiteSpace(primarySourceFileName))
+        {
+            contractorFilesSet.Add(primarySourceFileName);
+            contractorFilesSet.Add(Path.GetFileNameWithoutExtension(primarySourceFileName));
+        }
+
+        if (knownContractorFilePaths != null)
+        {
+            foreach (var path in knownContractorFilePaths)
+            {
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                string cName = Path.GetFileName(path);
+                contractorFilesSet.Add(cName);
+                contractorFilesSet.Add(Path.GetFileNameWithoutExtension(cName));
+            }
+        }
+
+        foreach (var pair in matchedPairs)
+        {
+            string? wbName = pair.MatchedSourceItem?.WorkbookName;
+            if (!string.IsNullOrWhiteSpace(wbName))
+            {
+                contractorFilesSet.Add(wbName);
+                contractorFilesSet.Add(Path.GetFileNameWithoutExtension(wbName));
+            }
+        }
+
+        // 2. Populate targetFilesSet from template path & known consultant target paths
+        if (!string.IsNullOrWhiteSpace(originalTemplateFilePath))
+        {
+            string tmplName = Path.GetFileName(originalTemplateFilePath);
+            targetFilesSet.Add(tmplName);
+            targetFilesSet.Add(Path.GetFileNameWithoutExtension(tmplName));
+
+            try
+            {
+                string? tmplDir = Path.GetDirectoryName(originalTemplateFilePath);
+                if (!string.IsNullOrWhiteSpace(tmplDir) && Directory.Exists(tmplDir))
+                {
+                    foreach (var f in Directory.EnumerateFiles(tmplDir, "*.xls*"))
+                    {
+                        string fn = Path.GetFileName(f);
+                        targetFilesSet.Add(fn);
+                        targetFilesSet.Add(Path.GetFileNameWithoutExtension(fn));
+                    }
+                }
+            }
+            catch { /* non-fatal */ }
+        }
+
+        if (knownTargetFilePaths != null)
+        {
+            foreach (var path in knownTargetFilePaths)
+            {
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                string tName = Path.GetFileName(path);
+                targetFilesSet.Add(tName);
+                targetFilesSet.Add(Path.GetFileNameWithoutExtension(tName));
+            }
+        }
+
+        foreach (var pair in matchedPairs)
+        {
+            string? wbName = pair.TargetItem?.WorkbookName;
+            if (!string.IsNullOrWhiteSpace(wbName))
+            {
+                targetFilesSet.Add(wbName);
+                targetFilesSet.Add(Path.GetFileNameWithoutExtension(wbName));
+            }
+        }
+
+        // 3. Scan exportDir dynamically to discover reconciled sibling packages and standalone contractor workbooks
+        if (!string.IsNullOrWhiteSpace(exportDir) && Directory.Exists(exportDir))
+        {
+            try
+            {
+                foreach (var f in Directory.EnumerateFiles(exportDir, "*.xlsx"))
+                {
+                    string fn = Path.GetFileName(f);
+                    if (fn.EndsWith("_Reconciled.xlsx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string baseTarget = fn.Substring(0, fn.Length - "_Reconciled.xlsx".Length);
+                        targetFilesSet.Add(baseTarget);
+                        targetFilesSet.Add($"{baseTarget}.xlsx");
+                    }
+                    else if (!fn.StartsWith("Master_", StringComparison.OrdinalIgnoreCase) &&
+                             !fn.StartsWith("Executive_", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Any non-reconciled standalone workbook present in the export folder is a contractor rate source
+                        contractorFilesSet.Add(fn);
+                        contractorFilesSet.Add(Path.GetFileNameWithoutExtension(fn));
+                    }
+                }
+            }
+            catch { /* non-fatal */ }
+        }
 
         using var archive = ZipFile.Open(outputZipPath, ZipArchiveMode.Update);
 
@@ -1121,19 +1247,41 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                         string unescaped = Uri.UnescapeDataString(target.Replace('\\', '/'));
                         string fileName = Path.GetFileName(unescaped);
 
-                        // If target points to a sibling schedule that has an exported '_Reconciled.xlsx' equivalent, link to it
                         string baseNoExt = Path.GetFileNameWithoutExtension(fileName);
                         string recFileName = $"{baseNoExt}_Reconciled.xlsx";
                         string newFileName = fileName;
 
-                        bool isContractorFile = string.Equals(fileName, "Electrical.xlsx", StringComparison.OrdinalIgnoreCase) ||
-                                                string.Equals(fileName, "CANDY FILE.xlsx", StringComparison.OrdinalIgnoreCase) ||
-                                                string.Equals(fileName, "Mechanical.xlsx", StringComparison.OrdinalIgnoreCase) ||
-                                                string.Equals(fileName, "PRELIMINARY.xlsx", StringComparison.OrdinalIgnoreCase);
+                        // Dynamic flexible classification without hardcoded file names
+                        bool isContractorFile = contractorFilesSet.Contains(fileName) || contractorFilesSet.Contains(baseNoExt);
+                        bool isKnownTarget = targetFilesSet.Contains(fileName) || targetFilesSet.Contains(baseNoExt);
 
-                        if (!isContractorFile && !fileName.EndsWith("_Reconciled.xlsx", StringComparison.OrdinalIgnoreCase))
+                        if (fileName.EndsWith("_Reconciled.xlsx", StringComparison.OrdinalIgnoreCase))
                         {
-                            // In batch reconciliation, all sibling consultant schedules are exported as [BaseName]_Reconciled.xlsx
+                            newFileName = fileName;
+                        }
+                        else if (isContractorFile)
+                        {
+                            // Contractor pricing workbook remains with its original file name
+                            newFileName = fileName;
+                        }
+                        else if (isKnownTarget)
+                        {
+                            // Sibling consultant schedule exported as [BaseName]_Reconciled.xlsx
+                            newFileName = recFileName;
+                        }
+                        else if (File.Exists(Path.Combine(exportDir, recFileName)))
+                        {
+                            // Reconciled counterpart physically exists in export directory
+                            newFileName = recFileName;
+                        }
+                        else if (File.Exists(Path.Combine(exportDir, fileName)))
+                        {
+                            // Original contractor workbook physically exists in export directory
+                            newFileName = fileName;
+                        }
+                        else
+                        {
+                            // Fallback heuristic for sibling consultant schedules
                             newFileName = recFileName;
                         }
 
@@ -1169,6 +1317,19 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
         if (!string.IsNullOrWhiteSpace(primarySourceFileName) && !fileToExtIndex.ContainsKey(primarySourceFileName))
         {
             sourceFilesToRegister.Add(primarySourceFileName);
+        }
+
+        if (knownContractorFilePaths != null)
+        {
+            foreach (var path in knownContractorFilePaths)
+            {
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                string cName = Path.GetFileName(path);
+                if (!string.IsNullOrWhiteSpace(cName) && !fileToExtIndex.ContainsKey(cName) && !sourceFilesToRegister.Contains(cName, StringComparer.OrdinalIgnoreCase))
+                {
+                    sourceFilesToRegister.Add(cName);
+                }
+            }
         }
 
         foreach (var pair in matchedPairs)

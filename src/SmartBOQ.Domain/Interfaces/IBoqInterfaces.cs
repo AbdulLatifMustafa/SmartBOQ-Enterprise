@@ -84,6 +84,17 @@ public interface IBoqExporter
         bool enableDynamicLinking = false,
         IProgress<int>? progress = null,
         CancellationToken ct = default);
+
+    Task ExportPricedBoqAsync(
+        string templateFilePath,
+        string outputFilePath,
+        IReadOnlyList<BoqMatchedPair> matchedPairs,
+        string? sourceContractorFilePath,
+        bool enableDynamicLinking,
+        IEnumerable<string>? knownContractorFilePaths,
+        IEnumerable<string>? knownTargetFilePaths,
+        IProgress<int>? progress = null,
+        CancellationToken ct = default);
 }
 
 /// <summary>

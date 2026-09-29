@@ -434,8 +434,16 @@ public sealed class BoqReconciliationService
             // Export reconciled workbook
             string baseName = Path.GetFileNameWithoutExtension(targetPath);
             string outPath = Path.Combine(outputDirectory, $"{baseName}_Reconciled.xlsx");
-
-            await _exporter.ExportPricedBoqAsync(targetPath, outPath, matchedPairs, primarySourcePath, enableDynamicLinking: true, progress: null, ct: ct).ConfigureAwait(false);
+            await _exporter.ExportPricedBoqAsync(
+                targetPath,
+                outPath,
+                matchedPairs,
+                primarySourcePath,
+                enableDynamicLinking: true,
+                knownContractorFilePaths: validSourcePaths,
+                knownTargetFilePaths: validTargetPaths,
+                progress: null,
+                ct: ct).ConfigureAwait(false);
 
             batchResults.Add(new BatchTargetResult
             {
@@ -457,25 +465,60 @@ public sealed class BoqReconciliationService
         string templatePath,
         string outputPath,
         IReadOnlyList<BoqMatchedPair> pairs,
-        string? sourceContractorFilePath = null,
-        bool enableDynamicLinking = true,
         IProgress<int>? progress = null,
         CancellationToken ct = default)
     {
-        return _exporter.ExportPricedBoqAsync(templatePath, outputPath, pairs, sourceContractorFilePath, enableDynamicLinking, progress, ct);
+        return ExportPricedScheduleAsync(templatePath, outputPath, pairs, null, enableDynamicLinking: false, progress, ct);
     }
 
     /// <summary>
-    /// Overload for backwards compatibility without dynamic linking.
+    /// Overload for exporting with primary contractor rate file and optional dynamic linking.
     /// </summary>
     public Task ExportPricedScheduleAsync(
         string templatePath,
         string outputPath,
         IReadOnlyList<BoqMatchedPair> pairs,
+        string? sourceContractorFilePath,
+        bool enableDynamicLinking = true,
         IProgress<int>? progress = null,
         CancellationToken ct = default)
     {
-        return ExportPricedScheduleAsync(templatePath, outputPath, pairs, null, enableDynamicLinking: false, progress, ct);
+        return ExportPricedScheduleAsync(
+            templatePath,
+            outputPath,
+            pairs,
+            sourceContractorFilePath,
+            enableDynamicLinking,
+            null,
+            null,
+            progress,
+            ct);
+    }
+
+    /// <summary>
+    /// Overload for batch reconciliation passing known contractor and consultant target file sets for dynamic linking.
+    /// </summary>
+    public Task ExportPricedScheduleAsync(
+        string templatePath,
+        string outputPath,
+        IReadOnlyList<BoqMatchedPair> pairs,
+        string? sourceContractorFilePath,
+        bool enableDynamicLinking,
+        IEnumerable<string>? knownContractorFilePaths,
+        IEnumerable<string>? knownTargetFilePaths,
+        IProgress<int>? progress = null,
+        CancellationToken ct = default)
+    {
+        return _exporter.ExportPricedBoqAsync(
+            templatePath,
+            outputPath,
+            pairs,
+            sourceContractorFilePath,
+            enableDynamicLinking,
+            knownContractorFilePaths,
+            knownTargetFilePaths,
+            progress,
+            ct);
     }
 
     /// <summary>

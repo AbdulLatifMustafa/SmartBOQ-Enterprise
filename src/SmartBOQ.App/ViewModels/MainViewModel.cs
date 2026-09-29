@@ -1652,6 +1652,8 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                     tgtResult.MatchedPairs,
                     sourceFiles[0],
                     enableDynamicLinking: true,
+                    knownContractorFilePaths: sourceFiles,
+                    knownTargetFilePaths: targetFiles.Select(f => f.FilePath),
                     progress: null,
                     ct: ct);
 

@@ -494,6 +494,103 @@ public class CognitiveBrainUnitAndIntegrationTests
         try { System.IO.Directory.Delete(testOutDir, true); } catch { }
     }
 
+    [Fact]
+    public void DynamicClassification_RelativizesExternalLinksWithoutHardcodedNames()
+    {
+        string tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SmartBOQ_DynamicClassify_" + Guid.NewGuid().ToString("N")[..8]);
+        System.IO.Directory.CreateDirectory(tempDir);
+        string testZipPath = System.IO.Path.Combine(tempDir, "TestConsultantSummary_Reconciled.xlsx");
+
+        try
+        {
+            // Create a minimal OpenXML workbook package with external links to arbitrary non-hardcoded files
+            using (var zip = System.IO.Compression.ZipFile.Open(testZipPath, System.IO.Compression.ZipArchiveMode.Create))
+            {
+                var wbEntry = zip.CreateEntry("xl/workbook.xml");
+                using (var w = new System.IO.StreamWriter(wbEntry.Open()))
+                {
+                    w.Write("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                            "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">\r\n" +
+                            "  <sheets><sheet name=\"Summary\" sheetId=\"1\" r:id=\"rId1\"/></sheets>\r\n" +
+                            "  <externalReferences>\r\n" +
+                            "    <externalReference r:id=\"rId2\"/>\r\n" +
+                            "    <externalReference r:id=\"rId3\"/>\r\n" +
+                            "  </externalReferences>\r\n" +
+                            "</workbook>");
+                }
+
+                var wbRelsEntry = zip.CreateEntry("xl/_rels/workbook.xml.rels");
+                using (var w = new System.IO.StreamWriter(wbRelsEntry.Open()))
+                {
+                    w.Write("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\r\n" +
+                            "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>\r\n" +
+                            "  <Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink\" Target=\"externalLinks/externalLink1.xml\"/>\r\n" +
+                            "  <Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink\" Target=\"externalLinks/externalLink2.xml\"/>\r\n" +
+                            "</Relationships>");
+                }
+
+                var link1Rels = zip.CreateEntry("xl/externalLinks/_rels/externalLink1.xml.rels");
+                using (var w = new System.IO.StreamWriter(link1Rels.Open()))
+                {
+                    w.Write("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\r\n" +
+                            "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath\" Target=\"file:///D:/Projects/Quotes/CustomVendorRates_2026.xlsx\" TargetMode=\"External\"/>\r\n" +
+                            "</Relationships>");
+                }
+
+                var link2Rels = zip.CreateEntry("xl/externalLinks/_rels/externalLink2.xml.rels");
+                using (var w = new System.IO.StreamWriter(link2Rels.Open()))
+                {
+                    w.Write("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\r\n" +
+                            "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath\" Target=\"file:///D:/Tender/Docs/Project_Civil_Package_Rev01.xlsx\" TargetMode=\"External\"/>\r\n" +
+                            "</Relationships>");
+                }
+            }
+
+            var contractorFiles = new List<string> { @"D:\Projects\Quotes\CustomVendorRates_2026.xlsx" };
+            var targetFiles = new List<string> { @"D:\Tender\Docs\Project_Civil_Package_Rev01.xlsx", @"D:\Tender\Docs\TestConsultantSummary.xlsx" };
+
+            // Execute dynamic linking with dynamic adaptive classification
+            SmartBOQ.Infrastructure.Export.ClosedXmlExporter.InjectRelativeDynamicLinks(
+                testZipPath,
+                sourceContractorFilePath: null,
+                matchedPairs: new List<BoqMatchedPair>(),
+                originalTemplateFormulas: null,
+                knownContractorFilePaths: contractorFiles,
+                knownTargetFilePaths: targetFiles,
+                originalTemplateFilePath: @"D:\Tender\Docs\TestConsultantSummary.xlsx");
+
+            // Verify the results in the zip archive
+            using (var zip = System.IO.Compression.ZipFile.OpenRead(testZipPath))
+            {
+                var l1Entry = zip.GetEntry("xl/externalLinks/_rels/externalLink1.xml.rels");
+                Assert.NotNull(l1Entry);
+                using (var r = new System.IO.StreamReader(l1Entry.Open()))
+                {
+                    string xml1 = r.ReadToEnd();
+                    // Contractor file must stay as original file name without _Reconciled
+                    Assert.Contains("Target=\"CustomVendorRates_2026.xlsx\"", xml1);
+                    Assert.DoesNotContain("CustomVendorRates_2026_Reconciled.xlsx", xml1);
+                }
+
+                var l2Entry = zip.GetEntry("xl/externalLinks/_rels/externalLink2.xml.rels");
+                Assert.NotNull(l2Entry);
+                using (var r = new System.IO.StreamReader(l2Entry.Open()))
+                {
+                    string xml2 = r.ReadToEnd();
+                    // Consultant sibling package must be converted to _Reconciled.xlsx
+                    Assert.Contains("Target=\"Project_Civil_Package_Rev01_Reconciled.xlsx\"", xml2);
+                }
+            }
+        }
+        finally
+        {
+            try { System.IO.Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
     private static BoqItem CreatePricedItem(string code, string desc, decimal qty, decimal rate)
     {
         return new BoqItem

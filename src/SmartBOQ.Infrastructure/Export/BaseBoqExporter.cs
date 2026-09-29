@@ -32,6 +32,20 @@ public abstract class BaseBoqExporter : IBoqExporter
         return ExportPricedBoqAsync(templateFilePath, outputFilePath, matchedPairs, progress, ct);
     }
 
+    public virtual Task ExportPricedBoqAsync(
+        string templateFilePath,
+        string outputFilePath,
+        IReadOnlyList<BoqMatchedPair> matchedPairs,
+        string? sourceContractorFilePath,
+        bool enableDynamicLinking,
+        IEnumerable<string>? knownContractorFilePaths,
+        IEnumerable<string>? knownTargetFilePaths,
+        IProgress<int>? progress = null,
+        CancellationToken ct = default)
+    {
+        return ExportPricedBoqAsync(templateFilePath, outputFilePath, matchedPairs, sourceContractorFilePath, enableDynamicLinking, progress, ct);
+    }
+
     private static readonly UTF8Encoding Utf8NoBom = new(false);
 
     /// <summary>
