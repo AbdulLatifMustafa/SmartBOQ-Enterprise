@@ -21,6 +21,8 @@ namespace SmartBOQ.Infrastructure.Export;
 /// </summary>
 public sealed class ClosedXmlExporter : BaseBoqExporter
 {
+    private static readonly UTF8Encoding Utf8NoBom = new(false);
+
     public override Task ExportPricedBoqAsync(
         string templateFilePath,
         string outputFilePath,
@@ -1124,8 +1126,14 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                         string recFileName = $"{baseNoExt}_Reconciled.xlsx";
                         string newFileName = fileName;
 
-                        if (!string.IsNullOrEmpty(exportDir) && File.Exists(Path.Combine(exportDir, recFileName)))
+                        bool isContractorFile = string.Equals(fileName, "Electrical.xlsx", StringComparison.OrdinalIgnoreCase) ||
+                                                string.Equals(fileName, "CANDY FILE.xlsx", StringComparison.OrdinalIgnoreCase) ||
+                                                string.Equals(fileName, "Mechanical.xlsx", StringComparison.OrdinalIgnoreCase) ||
+                                                string.Equals(fileName, "PRELIMINARY.xlsx", StringComparison.OrdinalIgnoreCase);
+
+                        if (!isContractorFile && !fileName.EndsWith("_Reconciled.xlsx", StringComparison.OrdinalIgnoreCase))
                         {
+                            // In batch reconciliation, all sibling consultant schedules are exported as [BaseName]_Reconciled.xlsx
                             newFileName = recFileName;
                         }
 
@@ -1199,7 +1207,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 "</externalLink>";
 
             var newExtEntry = archive.CreateEntry(linkPartFullZip, CompressionLevel.Fastest);
-            using (var writer = new StreamWriter(newExtEntry.Open(), Encoding.UTF8))
+            using (var writer = new StreamWriter(newExtEntry.Open(), Utf8NoBom))
             {
                 writer.Write(extLinkContent);
             }
@@ -1211,7 +1219,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 "</Relationships>";
 
             var newExtRelsEntry = archive.CreateEntry(linkRelsZip, CompressionLevel.Fastest);
-            using (var writer = new StreamWriter(newExtRelsEntry.Open(), Encoding.UTF8))
+            using (var writer = new StreamWriter(newExtRelsEntry.Open(), Utf8NoBom))
             {
                 writer.Write(extRelsContent);
             }
@@ -1231,7 +1239,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                     ctContent = ctContent.Replace("</Types>", $"{overrideStr}</Types>");
                     ctEntry.Delete();
                     var newCt = archive.CreateEntry("[Content_Types].xml", CompressionLevel.Fastest);
-                    using var writer = new StreamWriter(newCt.Open(), Encoding.UTF8);
+                    using var writer = new StreamWriter(newCt.Open(), Utf8NoBom);
                     writer.Write(ctContent);
                 }
             }
@@ -1387,7 +1395,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
             sheetEntry.Delete();
             var newSheetEntry = archive.CreateEntry(entryPath, CompressionLevel.Fastest);
-            using (var writer = new StreamWriter(newSheetEntry.Open(), Encoding.UTF8))
+            using (var writer = new StreamWriter(newSheetEntry.Open(), Utf8NoBom))
             {
                 writer.Write(updatedSheetXml);
             }

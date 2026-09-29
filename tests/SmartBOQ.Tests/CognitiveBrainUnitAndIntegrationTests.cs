@@ -460,6 +460,34 @@ public class CognitiveBrainUnitAndIntegrationTests
             using var wbReader = new System.IO.StreamReader(wbEntry.Open());
             string wbXml = wbReader.ReadToEnd();
             Assert.Contains("fullCalcOnLoad=\"1\"", wbXml);
+
+            // 4. Verify sheetProtection was stripped so engineer can edit freely without password
+            Assert.DoesNotContain("<sheetProtection", s7Xml);
+            Assert.DoesNotContain("<x:sheetProtection", s7Xml);
+        }
+
+        // 5. Test Grand Main Summary external link relativization to _Reconciled packages
+        string summaryTemplate = @"C:\Users\BodyBoy\Desktop\logs\BOQs\BOQs\00_A_0  Grand Main Summary _55018602_Rev_02.xlsx";
+        if (System.IO.File.Exists(summaryTemplate))
+        {
+            string summaryOut = System.IO.Path.Combine(testOutDir, "00_A_0  Grand Main Summary _55018602_Rev_02_Reconciled.xlsx");
+            await exporter.ExportPricedBoqAsync(summaryTemplate, summaryOut, new List<BoqMatchedPair>(), localElecPath, enableDynamicLinking: true);
+
+            using var zipSummary = System.IO.Compression.ZipFile.OpenRead(summaryOut);
+            var link8 = zipSummary.GetEntry("xl/externalLinks/_rels/externalLink8.xml.rels");
+            Assert.NotNull(link8);
+            using var l8Reader = new System.IO.StreamReader(link8.Open());
+            string l8Xml = l8Reader.ReadToEnd();
+            Assert.Contains("08_E_1_3", l8Xml);
+            Assert.Contains("_Reconciled.xlsx", l8Xml);
+
+            // Verify sheet protection is also stripped on Grand Main Summary
+            var s1 = zipSummary.GetEntry("xl/worksheets/sheet1.xml");
+            Assert.NotNull(s1);
+            using var s1Reader = new System.IO.StreamReader(s1.Open());
+            string s1Xml = s1Reader.ReadToEnd();
+            Assert.DoesNotContain("<sheetProtection", s1Xml);
+            Assert.DoesNotContain("<x:sheetProtection", s1Xml);
         }
 
         // Clean up

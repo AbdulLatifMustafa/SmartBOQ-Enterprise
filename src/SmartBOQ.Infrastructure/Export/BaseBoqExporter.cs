@@ -32,11 +32,13 @@ public abstract class BaseBoqExporter : IBoqExporter
         return ExportPricedBoqAsync(templateFilePath, outputFilePath, matchedPairs, progress, ct);
     }
 
+    private static readonly UTF8Encoding Utf8NoBom = new(false);
+
     /// <summary>
     /// Performs in-place OpenXML zip package healing with minimal memory and zero temp-file cloning:
     /// 1. Sanitizes Arabic-Indic digits in core.xml timestamps.
-    /// 2. Cleans up broken definedNames in workbook.xml.
-    /// 3. Strips complex custom autoFilter rules from worksheet xmls.
+    /// 2. Cleans up broken definedNames in workbook.xml and strips password protection.
+    /// 3. Strips complex custom autoFilter rules and unlocks password-protected worksheets.
     /// 4. Removes dangling relationships to missing parts.
     /// </summary>
     protected static void SanitizeOpenXmlPackage(string zipFilePath)
@@ -77,7 +79,7 @@ public abstract class BaseBoqExporter : IBoqExporter
 
                     coreEntry.Delete();
                     var newCore = archive.CreateEntry("docProps/core.xml", CompressionLevel.Fastest);
-                    using var writer = new StreamWriter(newCore.Open(), Encoding.UTF8);
+                    using var writer = new StreamWriter(newCore.Open(), Utf8NoBom);
                     writer.Write(sb.ToString());
                 }
             }
@@ -139,6 +141,14 @@ public abstract class BaseBoqExporter : IBoqExporter
                         }
                     }
 
+                    // Strip password-protected workbookProtection if present
+                    var wbProtections = doc.Descendants().Where(e => e.Name.LocalName == "workbookProtection").ToList();
+                    if (wbProtections.Count > 0)
+                    {
+                        foreach (var wp in wbProtections) wp.Remove();
+                        modified = true;
+                    }
+
                     if (modified)
                     {
                         wbEntry.Delete();
@@ -149,7 +159,7 @@ public abstract class BaseBoqExporter : IBoqExporter
                 }
             }
 
-            // 3. Algorithmically inspect and clean ONLY corrupted autoFilter rules from sheet XMLs
+            // 3. Algorithmically inspect and clean autoFilter rules and unlock password-protected sheets
             var sheetEntries = archive.Entries
                 .Where(e => e.FullName.StartsWith("xl/worksheets/sheet", StringComparison.OrdinalIgnoreCase) &&
                             e.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
@@ -164,11 +174,26 @@ public abstract class BaseBoqExporter : IBoqExporter
                 }
                 if (doc == null) continue;
 
+                bool modified = false;
+
                 // ClosedXML cannot serialize existing template autoFilter elements and throws NotSupportedException
                 var autoFilters = doc.Descendants().Where(e => e.Name.LocalName == "autoFilter").ToList();
                 if (autoFilters.Count > 0)
                 {
                     foreach (var af in autoFilters) af.Remove();
+                    modified = true;
+                }
+
+                // Unlock worksheet: remove password-protected sheetProtection so user can edit freely in Excel
+                var sheetProtections = doc.Descendants().Where(e => e.Name.LocalName == "sheetProtection").ToList();
+                if (sheetProtections.Count > 0)
+                {
+                    foreach (var sp in sheetProtections) sp.Remove();
+                    modified = true;
+                }
+
+                if (modified)
+                {
                     string sheetPath = sheetEntry.FullName;
                     sheetEntry.Delete();
                     var newSheet = archive.CreateEntry(sheetPath, CompressionLevel.Fastest);
