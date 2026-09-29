@@ -245,8 +245,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
             using var workbook = new XLWorkbook();
             ExcelDashboardBuilder.BuildDashboard(workbook, matchedPairs);
-            CreateAuditLogWorksheet(workbook, matchedPairs, sourceContractorFilePath);
-            CreatePricingLinkageMapWorksheet(workbook, matchedPairs, sourceContractorFilePath);
+            CreateAuditLogWorksheet(workbook, matchedPairs, sourceContractorFilePath, isStandaloneDashboard: true);
+            CreatePricingLinkageMapWorksheet(workbook, matchedPairs, sourceContractorFilePath, isStandaloneDashboard: true);
             workbook.SaveAs(outputPath);
         }
         finally
@@ -263,7 +263,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
     private static void CreateAuditLogWorksheet(
         XLWorkbook workbook,
         IReadOnlyList<BoqMatchedPair> matchedPairs,
-        string? sourceContractorFilePath = null)
+        string? sourceContractorFilePath = null,
+        bool isStandaloneDashboard = false)
     {
         string contractorFileName = !string.IsNullOrWhiteSpace(sourceContractorFilePath)
             ? Path.GetFileName(sourceContractorFilePath)
@@ -407,26 +408,50 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             string rateColLetter = XLHelper.GetColumnLetterFromNumber(rateCol);
             string targetSheetName = !string.IsNullOrWhiteSpace(item.SheetName) ? item.SheetName : item.BillNumber;
             string safeSheet = targetSheetName.Replace("'", "''");
-            string targetCellRef = $"'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
+
+            bool sheetExistsInThisWorkbook = !isStandaloneDashboard &&
+                !string.IsNullOrWhiteSpace(item.SheetName) &&
+                workbook.TryGetWorksheet(item.SheetName, out _);
+
+            string rawWb = !string.IsNullOrWhiteSpace(item.WorkbookName) ? item.WorkbookName : "";
+            string targetFileName = Path.GetFileName(rawWb);
+            if (!string.IsNullOrWhiteSpace(targetFileName) && !targetFileName.EndsWith("_Reconciled.xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                targetFileName = $"{Path.GetFileNameWithoutExtension(targetFileName)}_Reconciled.xlsx";
+            }
+
+            string targetCellRef;
+            if (sheetExistsInThisWorkbook)
+            {
+                targetCellRef = $"#'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
+            }
+            else if (!string.IsNullOrWhiteSpace(targetFileName))
+            {
+                targetCellRef = $"{targetFileName}#'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
+            }
+            else
+            {
+                targetCellRef = $"#'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
+            }
 
             // Col 1: Tender Schedule jump link
             var jumpCell = ws.Cell(rowIdx, 1);
             if (isPriced)
             {
-                jumpCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] المقايسة\")";
+                jumpCell.FormulaA1 = $"=HYPERLINK(\"{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] المقايسة\")";
                 jumpCell.Style.Font.Bold = true;
                 jumpCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 jumpCell.Style.Font.FontColor = XLColor.FromHtml("#2563EB"); // Royal blue
             }
             else if (isPs)
             {
-                jumpCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] محمي\")";
+                jumpCell.FormulaA1 = $"=HYPERLINK(\"{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] محمي\")";
                 jumpCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 jumpCell.Style.Font.FontColor = XLColor.FromHtml("#B45309"); // Amber
             }
             else
             {
-                jumpCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] معاينة\")";
+                jumpCell.FormulaA1 = $"=HYPERLINK(\"{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] معاينة\")";
                 jumpCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 jumpCell.Style.Font.FontColor = XLColor.FromHtml("#64748B");
             }
@@ -467,14 +492,14 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
             // Col 3: Sheet / Bill (Also Clickable)
             var sheetCell = ws.Cell(rowIdx, 3);
-            sheetCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{targetSheetName}\")";
+            sheetCell.FormulaA1 = $"=HYPERLINK(\"{targetCellRef}\", \"{targetSheetName}\")";
             sheetCell.Style.Font.Underline = XLFontUnderlineValues.Single;
             sheetCell.Style.Font.FontColor = isPriced ? XLColor.FromHtml("#0F172A") : XLColor.FromHtml("#475569");
             sheetCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
 
             // Col 4: Row (Also Clickable)
             var rowCell = ws.Cell(rowIdx, 4);
-            rowCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}\")";
+            rowCell.FormulaA1 = $"=HYPERLINK(\"{targetCellRef}\", \"{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}\")";
             rowCell.Style.Font.Bold = isPriced;
             rowCell.Style.Font.Underline = XLFontUnderlineValues.Single;
             rowCell.Style.Font.FontColor = isPriced ? XLColor.FromHtml("#2563EB") : XLColor.FromHtml("#64748B");
@@ -500,9 +525,9 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             ws.Cell(rowIdx, 9).Value = item.Unit;
             ws.Cell(rowIdx, 9).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-            // Col 10: Quantity (Live formula-linked to bill sheet if anchorRow > 0)
+            // Col 10: Quantity (Live formula-linked to bill sheet if anchorRow > 0 and sheet exists in this workbook)
             var qtyCell = ws.Cell(rowIdx, 10);
-            if (item.AnchorRowIndex > 0)
+            if (sheetExistsInThisWorkbook && item.AnchorRowIndex > 0)
             {
                 int qtyCol = item.QuantityColumnIndex > 0 ? item.QuantityColumnIndex : 5;
                 string qtyColLetter = XLHelper.GetColumnLetterFromNumber(qtyCol);
@@ -521,9 +546,9 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
             // Col 12: Injected Rate (Live cell formula with Clickable jump)
             var rateCell = ws.Cell(rowIdx, 12);
-            if (isPriced && item.AnchorRowIndex > 0)
+            if (sheetExistsInThisWorkbook && isPriced && item.AnchorRowIndex > 0)
             {
-                rateCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", '{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)})";
+                rateCell.FormulaA1 = $"=HYPERLINK(\"{targetCellRef}\", '{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)})";
                 rateCell.Style.Font.Bold = true;
                 rateCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 rateCell.Style.Font.FontColor = XLColor.FromHtml("#15803D"); // Emerald green
@@ -531,22 +556,44 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             }
             else if (rate.HasValue && rate > 0)
             {
-                rateCell.Value = (double)rate.Value;
+                if (item.AnchorRowIndex > 0)
+                {
+                    rateCell.FormulaA1 = $"=HYPERLINK(\"{targetCellRef}\", {rate.Value.ToString(CultureInfo.InvariantCulture)})";
+                    rateCell.Style.Font.Bold = true;
+                    rateCell.Style.Font.Underline = XLFontUnderlineValues.Single;
+                    rateCell.Style.Font.FontColor = XLColor.FromHtml("#15803D");
+                }
+                else
+                {
+                    rateCell.Value = (double)rate.Value;
+                }
                 rateCell.Style.NumberFormat.Format = "#,##0.00";
+            }
+            else
+            {
+                rateCell.Value = "-";
             }
             rateCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
 
-            // Col 13: Computed Amount (Live formula-linked to bill sheet amount)
+            // Col 13: Computed Amount (Live formula-linked to bill sheet amount or dynamic quantity*rate)
             var amtCell = ws.Cell(rowIdx, 13);
-            if (item.AnchorRowIndex > 0)
+            if (sheetExistsInThisWorkbook && item.AnchorRowIndex > 0)
             {
                 int amtCol = item.AmountColumnIndex > 0 ? item.AmountColumnIndex : 8;
                 string amtColLetter = XLHelper.GetColumnLetterFromNumber(amtCol);
                 amtCell.FormulaA1 = $"='{safeSheet}'!{amtColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
             }
-            else if (amount.HasValue)
+            else if (rate.HasValue && rate > 0)
+            {
+                amtCell.FormulaA1 = $"=J{rowIdx}*L{rowIdx}";
+            }
+            else if (amount.HasValue && amount > 0)
             {
                 amtCell.Value = (double)amount.Value;
+            }
+            else
+            {
+                amtCell.Value = "-";
             }
             amtCell.Style.NumberFormat.Format = "#,##0.00";
             amtCell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
@@ -619,7 +666,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
     private static void CreatePricingLinkageMapWorksheet(
         XLWorkbook workbook,
         IReadOnlyList<BoqMatchedPair> matchedPairs,
-        string? sourceContractorFilePath = null)
+        string? sourceContractorFilePath = null,
+        bool isStandaloneDashboard = false)
     {
         string contractorFileName = !string.IsNullOrWhiteSpace(sourceContractorFilePath)
             ? Path.GetFileName(sourceContractorFilePath)
@@ -735,13 +783,37 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             string rateColLetter = XLHelper.GetColumnLetterFromNumber(rateCol);
             string targetSheetName = !string.IsNullOrWhiteSpace(item.SheetName) ? item.SheetName : item.BillNumber;
             string safeSheet = targetSheetName.Replace("'", "''");
-            string targetCellRef = $"'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
+
+            bool sheetExistsInThisWorkbook = !isStandaloneDashboard &&
+                !string.IsNullOrWhiteSpace(item.SheetName) &&
+                workbook.TryGetWorksheet(item.SheetName, out _);
+
+            string rawWb = !string.IsNullOrWhiteSpace(item.WorkbookName) ? item.WorkbookName : "";
+            string targetFileName = Path.GetFileName(rawWb);
+            if (!string.IsNullOrWhiteSpace(targetFileName) && !targetFileName.EndsWith("_Reconciled.xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                targetFileName = $"{Path.GetFileNameWithoutExtension(targetFileName)}_Reconciled.xlsx";
+            }
+
+            string targetCellRef;
+            if (sheetExistsInThisWorkbook)
+            {
+                targetCellRef = $"#'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
+            }
+            else if (!string.IsNullOrWhiteSpace(targetFileName))
+            {
+                targetCellRef = $"{targetFileName}#'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
+            }
+            else
+            {
+                targetCellRef = $"#'{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
+            }
 
             // Col 1: Jump to Tender Schedule (English Digits)
             var tenderJump = ws.Cell(rowIdx, 1);
             if (item.AnchorRowIndex > 0)
             {
-                tenderJump.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] المقايسة\")";
+                tenderJump.FormulaA1 = $"=HYPERLINK(\"{targetCellRef}\", \"[ {rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)} ] المقايسة\")";
                 tenderJump.Style.Font.Bold = true;
                 tenderJump.Style.Font.Underline = XLFontUnderlineValues.Single;
                 tenderJump.Style.Font.FontColor = XLColor.FromHtml("#2563EB"); // Royal blue
@@ -788,7 +860,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             var sheetCell = ws.Cell(rowIdx, 3);
             if (item.AnchorRowIndex > 0)
             {
-                sheetCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{targetSheetName}\")";
+                sheetCell.FormulaA1 = $"=HYPERLINK(\"{targetCellRef}\", \"{targetSheetName}\")";
                 sheetCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 sheetCell.Style.Font.FontColor = XLColor.FromHtml("#0F172A");
             }
@@ -802,7 +874,7 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             var rowCell = ws.Cell(rowIdx, 4);
             if (item.AnchorRowIndex > 0)
             {
-                rowCell.FormulaA1 = $"=HYPERLINK(\"#{targetCellRef}\", \"{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}\")";
+                rowCell.FormulaA1 = $"=HYPERLINK(\"{targetCellRef}\", \"{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}\")";
                 rowCell.Style.Font.Underline = XLFontUnderlineValues.Single;
                 rowCell.Style.Font.FontColor = XLColor.FromHtml("#2563EB");
             }
@@ -825,9 +897,9 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             ws.Cell(rowIdx, 7).Value = item.Unit;
             ws.Cell(rowIdx, 7).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-            // Col 8: Quantity (Live formula-linked to bill sheet)
+            // Col 8: Quantity (Live formula-linked to bill sheet if anchorRow > 0 and sheet exists in this workbook)
             var mapQtyCell = ws.Cell(rowIdx, 8);
-            if (item.AnchorRowIndex > 0)
+            if (sheetExistsInThisWorkbook && item.AnchorRowIndex > 0)
             {
                 int qtyCol = item.QuantityColumnIndex > 0 ? item.QuantityColumnIndex : 5;
                 string qtyColLetter = XLHelper.GetColumnLetterFromNumber(qtyCol);
@@ -883,12 +955,11 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             ws.Cell(rowIdx, 14).Value = srcDesc.Length > 100 ? srcDesc[..97] + "..." : srcDesc;
             ws.Cell(rowIdx, 14).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
 
-            // Col 15: Unit Rate (EGP) (Live formula-linked to bill sheet)
+            // Col 15: Unit Rate (EGP) (Live formula-linked to bill sheet or numeric value)
             var rateCell = ws.Cell(rowIdx, 15);
-            if (item.AnchorRowIndex > 0 && rate.HasValue && rate > 0)
+            if (sheetExistsInThisWorkbook && item.AnchorRowIndex > 0 && rate.HasValue && rate > 0)
             {
                 rateCell.FormulaA1 = $"='{safeSheet}'!{rateColLetter}{item.AnchorRowIndex.ToString(CultureInfo.InvariantCulture)}";
-
                 rateCell.Style.NumberFormat.Format = "#,##0.00";
                 rateCell.Style.Font.Bold = true;
                 rateCell.Style.Font.FontColor = XLColor.FromHtml("#15803D");
@@ -1210,7 +1281,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             string? rId = sheet.Attribute(rNs + "id")?.Value ?? sheet.Attribute("id")?.Value;
             if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(rId) && relMap.TryGetValue(rId, out string? target))
             {
-                string normTarget = target.StartsWith("xl/", StringComparison.OrdinalIgnoreCase) ? target : $"xl/{target}";
+                string cleanTarget = target.TrimStart('/');
+                string normTarget = cleanTarget.StartsWith("xl/", StringComparison.OrdinalIgnoreCase) ? cleanTarget : $"xl/{cleanTarget}";
                 sheetNameToZipPath[name] = normTarget;
             }
         }
@@ -1230,7 +1302,8 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 continue;
             }
 
-            string linkPartPath = linkPartTarget.StartsWith("xl/", StringComparison.OrdinalIgnoreCase) ? linkPartTarget : $"xl/{linkPartTarget}";
+            string cleanLinkTarget = linkPartTarget.TrimStart('/');
+            string linkPartPath = cleanLinkTarget.StartsWith("xl/", StringComparison.OrdinalIgnoreCase) ? cleanLinkTarget : $"xl/{cleanLinkTarget}";
             string linkPartFileName = Path.GetFileName(linkPartPath);
             string relsPath = $"xl/externalLinks/_rels/{linkPartFileName}.rels";
 
@@ -1302,6 +1375,65 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                         fileToExtIndex[newFileName] = currentIndex;
                         fileToExtIndex[baseNoExt] = currentIndex;
                         fileToExtIndex[fileName] = currentIndex;
+
+                        // Ensure existing externalLink has all actual sheets of the external workbook
+                        var extLinkEntry = archive.GetEntry(linkPartPath);
+                        if (extLinkEntry != null)
+                        {
+                            try
+                            {
+                                XDocument extLinkDoc;
+                                using (var s = extLinkEntry.Open())
+                                {
+                                    extLinkDoc = XDocument.Load(s);
+                                }
+
+                                XNamespace mainNs = extLinkDoc.Root?.Name.Namespace ?? "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+                                var sheetNamesElem = extLinkDoc.Descendants(mainNs + "sheetNames").FirstOrDefault()
+                                    ?? extLinkDoc.Descendants().FirstOrDefault(e => e.Name.LocalName == "sheetNames");
+
+                                if (sheetNamesElem != null && !string.IsNullOrWhiteSpace(newFileName))
+                                {
+                                    var actualSheets = GetExternalWorkbookSheetNames(newFileName, exportDir, matchedPairs);
+                                    var existingSheets = sheetNamesElem.Elements().Select(e => e.Attribute("val")?.Value ?? "").ToList();
+
+                                    bool needsUpdate = false;
+                                    if (actualSheets.Count > existingSheets.Count)
+                                    {
+                                        needsUpdate = true;
+                                    }
+                                    else
+                                    {
+                                        for (int i = 0; i < Math.Min(actualSheets.Count, existingSheets.Count); i++)
+                                        {
+                                            if (!string.Equals(actualSheets[i], existingSheets[i], StringComparison.OrdinalIgnoreCase))
+                                            {
+                                                needsUpdate = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if (needsUpdate)
+                                    {
+                                        sheetNamesElem.RemoveAll();
+                                        foreach (var s in actualSheets)
+                                        {
+                                            sheetNamesElem.Add(new XElement(mainNs + "sheetName", new XAttribute("val", s)));
+                                        }
+
+                                        extLinkEntry.Delete();
+                                        var newExtLinkEntry = archive.CreateEntry(linkPartPath, CompressionLevel.Fastest);
+                                        using var wsStream = newExtLinkEntry.Open();
+                                        extLinkDoc.Save(wsStream);
+                                    }
+                                }
+                            }
+                            catch
+                            {
+                                // Graceful fallback
+                            }
+                        }
                     }
                 }
 
@@ -1363,12 +1495,20 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             string linkPartFullZip = $"xl/{linkPartRelTarget}";
             string linkRelsZip = $"xl/externalLinks/_rels/externalLink{nextExtNum}.xml.rels";
 
-            // Create externalLink XML
+            // Create externalLink XML with accurate dynamic sheet names
+            var sheets = GetExternalWorkbookSheetNames(srcFile, exportDir, matchedPairs);
+            var sbSheets = new StringBuilder();
+            foreach (var s in sheets)
+            {
+                string escapedSheet = SecurityElement.Escape(s) ?? s;
+                sbSheets.Append($"<sheetName val=\"{escapedSheet}\"/>");
+            }
+
             string escapedSrc = Uri.EscapeDataString(srcFile).Replace("%2E", ".");
             string extLinkContent = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
                 "<externalLink xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\r\n" +
                 "  <externalBook xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" r:id=\"rId1\">\r\n" +
-                "    <sheetNames><sheetName val=\"Sheet1\"/></sheetNames>\r\n" +
+                $"    <sheetNames>{sbSheets}</sheetNames>\r\n" +
                 "  </externalBook>\r\n" +
                 "</externalLink>";
 
@@ -1526,12 +1666,14 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                     }
 
                     string srcSheet = string.IsNullOrWhiteSpace(pair.MatchedSourceItem.SheetName) ? "Sheet1" : pair.MatchedSourceItem.SheetName;
-                    string safeSrcSheet = srcSheet.Contains(' ') ? $"'{srcSheet}'" : srcSheet;
+                    string cleanSheet = srcSheet.Replace("'", "''");
+                    bool needsQuotes = cleanSheet.Any(c => !char.IsLetterOrDigit(c) && c != '_');
+                    string formulaSheetRef = needsQuotes ? $"'[{extIdx}]{cleanSheet}'" : $"[{extIdx}]{cleanSheet}";
                     int srcCol = pair.MatchedSourceItem.RateColumnIndex > 0 ? pair.MatchedSourceItem.RateColumnIndex : 18;
                     string srcColLetter = GetExcelColumnLetter(srcCol);
                     int srcRow = pair.MatchedSourceItem.AnchorRowIndex;
 
-                    string formulaText = $"[{extIdx}]{safeSrcSheet}!${srcColLetter}${srcRow}";
+                    string formulaText = $"{formulaSheetRef}!${srcColLetter}${srcRow}";
                     cellFormulaMap[targetCellRef] = formulaText;
                 }
             }
@@ -1566,6 +1708,93 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 writer.Write(updatedSheetXml);
             }
         }
+    }
+
+    /// <summary>
+    /// Reads and extracts the sheet names of an external contractor or target workbook in exact index order.
+    /// Falls back to matched pairs if file cannot be read directly.
+    /// </summary>
+    private static List<string> GetExternalWorkbookSheetNames(
+        string contractorFileName,
+        string packageDirectory,
+        IReadOnlyList<BoqMatchedPair> matchedPairs)
+    {
+        var sheetNames = new List<string>();
+
+        // 1. Attempt to locate the external file on disk
+        string? candidatePath = null;
+        if (File.Exists(contractorFileName))
+        {
+            candidatePath = contractorFileName;
+        }
+        else
+        {
+            string p1 = Path.Combine(packageDirectory, contractorFileName);
+            if (File.Exists(p1))
+            {
+                candidatePath = p1;
+            }
+            else
+            {
+                string p2 = Path.Combine(packageDirectory, Path.GetFileName(contractorFileName));
+                if (File.Exists(p2))
+                {
+                    candidatePath = p2;
+                }
+            }
+        }
+
+        if (candidatePath != null)
+        {
+            try
+            {
+                using var zip = ZipFile.OpenRead(candidatePath);
+                var wbEntry = zip.GetEntry("xl/workbook.xml");
+                if (wbEntry != null)
+                {
+                    using var sr = new StreamReader(wbEntry.Open(), Encoding.UTF8);
+                    string wbXml = sr.ReadToEnd();
+                    var matches = Regex.Matches(wbXml, @"<(?:\w+:)?sheet\b[^>]*name=""([^""]+)""", RegexOptions.IgnoreCase);
+                    foreach (Match m in matches)
+                    {
+                        string sName = m.Groups[1].Value;
+                        if (!string.IsNullOrWhiteSpace(sName) && !sheetNames.Contains(sName, StringComparer.OrdinalIgnoreCase))
+                        {
+                            sheetNames.Add(sName);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback gracefully if file cannot be opened as zip
+            }
+        }
+
+        // 2. Augment with any sheet names explicitly referenced by matched pairs for this file
+        string fileNameOnly = Path.GetFileName(contractorFileName);
+        foreach (var pair in matchedPairs)
+        {
+            var src = pair.MatchedSourceItem;
+            if (src == null || string.IsNullOrWhiteSpace(src.SheetName)) continue;
+
+            string srcFile = !string.IsNullOrWhiteSpace(src.WorkbookName) ? Path.GetFileName(src.WorkbookName) : "";
+            if (string.Equals(srcFile, fileNameOnly, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(srcFile, contractorFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                if (!sheetNames.Contains(src.SheetName, StringComparer.OrdinalIgnoreCase))
+                {
+                    sheetNames.Add(src.SheetName);
+                }
+            }
+        }
+
+        if (sheetNames.Count == 0)
+        {
+            sheetNames.Add("Sheet1");
+        }
+
+        return sheetNames;
     }
 
     /// <summary>

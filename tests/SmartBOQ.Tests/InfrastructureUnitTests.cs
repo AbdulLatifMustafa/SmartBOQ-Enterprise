@@ -1,8 +1,10 @@
+using System.IO;
 using ClosedXML.Excel;
 using ExcelDataReader;
 using SmartBOQ.Domain.Enums;
 using SmartBOQ.Domain.Models;
 using SmartBOQ.Infrastructure.Common;
+using SmartBOQ.Infrastructure.Export;
 using SmartBOQ.Infrastructure.Parsers;
 using Xunit;
 
@@ -178,5 +180,179 @@ public class InfrastructureUnitTests
         Assert.NotNull(method);
         bool actual = (bool)method.Invoke(null, new object[] { sheetName })!;
         Assert.Equal(expectedIsNonBill, actual);
+    }
+
+    [Fact]
+    public void ExportStandaloneDashboard_ProducesZeroRefErrors_AndValidExternalLinks()
+    {
+        string tempDashPath = Path.Combine(Path.GetTempPath(), $"Test_Dashboard_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            var targetItem = new BoqItem
+            {
+                Id = "T1",
+                ItemCode = "CIV-001",
+                Description = "Excavation in all types of soil",
+                Unit = "m3",
+                Quantity = 500m,
+                UnitRate = 0m,
+                SheetName = "Civil Works",
+                BillNumber = "Bill 01",
+                AnchorRowIndex = 15,
+                WorkbookName = "C:\\Projects\\01_Civil_Package.xlsx",
+                RateColumnIndex = 7,
+                QuantityColumnIndex = 5,
+                AmountColumnIndex = 8
+            };
+
+            var sourceItem = new BoqItem
+            {
+                Id = "S1",
+                ItemCode = "SRC-101",
+                Description = "Excavation and disposal",
+                Unit = "m3",
+                Quantity = 500m,
+                UnitRate = 120.50m,
+                SheetName = "Rates Master",
+                BillNumber = "General",
+                AnchorRowIndex = 42,
+                WorkbookName = "C:\\Projects\\Contractor_Rates.xlsx",
+                RateColumnIndex = 18
+            };
+
+            var pair = new BoqMatchedPair
+            {
+                TargetItem = targetItem,
+                MatchedSourceItem = sourceItem,
+                SimilarityScore = 1.0,
+                Confidence = MatchConfidence.Exact,
+                InjectedRate = 120.50m,
+                MatchRationale = "Exact Semantic Match",
+                IsApproved = true
+            };
+            var pairs = new List<BoqMatchedPair> { pair };
+
+            ClosedXmlExporter.ExportStandaloneDashboard(tempDashPath, pairs, "C:\\Projects\\Contractor_Rates.xlsx");
+
+            using var wb = new XLWorkbook(tempDashPath);
+            var auditWs = wb.Worksheet("Audit_Report");
+            Assert.NotNull(auditWs);
+
+            // Row 8 is first data row (headers are rows 6-7)
+            var tenderJumpCell = auditWs.Cell(8, 1);
+            Assert.Contains("01_Civil_Package_Reconciled.xlsx", tenderJumpCell.FormulaA1);
+            Assert.Contains("'Civil Works'!G15", tenderJumpCell.FormulaA1);
+            Assert.DoesNotContain("#REF!", tenderJumpCell.FormulaA1);
+
+            var qtyCell = auditWs.Cell(8, 10);
+            Assert.False(qtyCell.HasFormula); // Standalone dashboard writes direct numeric quantity to prevent #REF!
+            Assert.Equal(500.0, qtyCell.GetDouble());
+
+            var rateCell = auditWs.Cell(8, 12);
+            Assert.DoesNotContain("#REF!", rateCell.FormulaA1);
+            Assert.Contains("01_Civil_Package_Reconciled.xlsx", rateCell.FormulaA1);
+
+            var amtCell = auditWs.Cell(8, 13);
+            Assert.Equal("J8*L8", amtCell.FormulaA1); // Local dynamic quantity*rate formula
+
+            var mapWs = wb.Worksheet("Pricing_Linkage_Map");
+            Assert.NotNull(mapWs);
+            var mapQtyCell = mapWs.Cell(8, 8);
+            Assert.False(mapQtyCell.HasFormula);
+            Assert.Equal(500.0, mapQtyCell.GetDouble());
+            var mapRateCell = mapWs.Cell(8, 15);
+            Assert.False(mapRateCell.HasFormula);
+            Assert.Equal(120.50, mapRateCell.GetDouble());
+        }
+        finally
+        {
+            if (File.Exists(tempDashPath)) File.Delete(tempDashPath);
+        }
+    }
+
+    [Fact]
+    public void InjectRelativeDynamicLinks_HandlesMultipleSheetsAndSpacesInContractorFile()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), $"TestDynamicLink_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // 1. Create a dummy contractor workbook with two sheets including spaces
+            string contractorFile = Path.Combine(tempDir, "Contractor Rates.xlsx");
+            using (var wbContractor = new XLWorkbook())
+            {
+                wbContractor.Worksheets.Add("Index Sheet");
+                wbContractor.Worksheets.Add("Phase 1 & 2 Rates");
+                wbContractor.SaveAs(contractorFile);
+            }
+
+            // 2. Create a dummy target tender package
+            string targetPackage = Path.Combine(tempDir, "Package_01_Reconciled.xlsx");
+            using (var wbTarget = new XLWorkbook())
+            {
+                var ws = wbTarget.Worksheets.Add("Bill_Civil");
+                ws.Cell("G10").Value = 0;
+                wbTarget.SaveAs(targetPackage);
+            }
+
+            var targetItem = new BoqItem
+            {
+                Id = "T1",
+                BillNumber = "Bill 01",
+                Description = "Target item",
+                SheetName = "Bill_Civil",
+                AnchorRowIndex = 10,
+                RateColumnIndex = 7
+            };
+
+            var sourceItem = new BoqItem
+            {
+                Id = "S1",
+                BillNumber = "Bill 01",
+                Description = "Source item",
+                WorkbookName = "Contractor Rates.xlsx",
+                SheetName = "Phase 1 & 2 Rates",
+                AnchorRowIndex = 25,
+                RateColumnIndex = 18,
+                UnitRate = 250m
+            };
+
+            var pair = new BoqMatchedPair
+            {
+                TargetItem = targetItem,
+                MatchedSourceItem = sourceItem,
+                SimilarityScore = 1.0,
+                Confidence = MatchConfidence.Exact,
+                InjectedRate = 250m,
+                IsApproved = true
+            };
+            var pairs = new List<BoqMatchedPair> { pair };
+
+            ClosedXmlExporter.InjectRelativeDynamicLinks(targetPackage, "Contractor Rates.xlsx", pairs);
+
+            // Inspect the target package's externalLink1.xml
+            using var zip = System.IO.Compression.ZipFile.OpenRead(targetPackage);
+            var extEntry = zip.GetEntry("xl/externalLinks/externalLink1.xml");
+            Assert.NotNull(extEntry);
+
+            using var sr = new StreamReader(extEntry.Open());
+            string extXml = sr.ReadToEnd();
+
+            // Must contain both sheets from the contractor workbook in exact order
+            Assert.Contains("Index Sheet", extXml);
+            Assert.Contains("Phase 1 &amp; 2 Rates", extXml);
+
+            // Inspect the sheet XML to verify quoted external formula syntax
+            var sheetEntry = zip.GetEntry("xl/worksheets/sheet1.xml");
+            Assert.NotNull(sheetEntry);
+            using var srSheet = new StreamReader(sheetEntry.Open());
+            string sheetXml = srSheet.ReadToEnd();
+
+            Assert.Contains("'[1]Phase 1 & 2 Rates'!$R$25", sheetXml);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
     }
 }
