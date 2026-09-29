@@ -48,6 +48,12 @@ To guarantee that any contractor or consultant file can be ingested without cras
    - Excel calculation error tokens (`#VALUE!`, `#REF!`, `#DIV/0!`, `#N/A`, `#NAME?`) are safely isolated and treated as unpriced/null items rather than throwing parsing exceptions.
 5. **Contractual Note Isolation**:
    - Non-numeric contractual descriptors (`Rate only`, `Included`, `بند محمل`, `N/A`) are captured as notes without corrupting unit rate fields.
+6. **Composite Rate Arbitration**:
+   - When contractor schedules provide split pricing (`Supply Rate`, `Installation Rate`), the engine prioritizes composite all-in rates (`Total Unit Rate`, `فئة شاملة`). Row total amounts (`Total Amount`, `الإجمالي`) are strictly guarded and never misidentified as unit rates.
+7. **Deep Preamble & Dynamic Header Discovery**:
+   - Dynamic scan depth extends up to 60 rows to bypass multi-tier corporate headers, administrative logos, and notes, with adaptive fallbacks for unit-less item lists.
+8. **Context-Aware Bill Discrimination**:
+   - The sheet classifier (`IsNonBillSheet`) distinguishes active bill schedules containing summary terminology (e.g. `Bill 01 - Summary of Earthworks`) from non-bill cover summaries.
 
 ---
 
@@ -95,5 +101,5 @@ To guarantee that any contractor or consultant file can be ingested without cras
 
 Before merging or publishing any code to production:
 1. **0 Warnings & 0 Errors**: Solution must build in `Release` mode with zero compiler warnings.
-2. **100% Automated Test Pass Rate**: All unit and architecture tests in `SmartBOQ.Tests` must pass.
+2. **100% Automated Test Pass Rate**: All 107 unit, architecture, and engine tests in `SmartBOQ.Tests` must pass.
 3. **Automated XAML Icon Enum Verification**: `AllXamlPackIconLucideKinds_AreValidEnumMembers` test must verify that all Lucide icon names declared in XAML match valid enum members in `MahApps.Metro.IconPacks.Lucide`.

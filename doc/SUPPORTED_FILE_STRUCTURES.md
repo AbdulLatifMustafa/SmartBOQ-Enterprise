@@ -43,7 +43,8 @@ flowchart TD
 ### Operational Characteristics:
 * **Forward-Only Streaming**: Built upon `ExcelDataReader` utilizing low-level memory streams with sequential scanning. Does not load the entire Excel DOM into memory, maintaining a flat memory footprint (<200 MB RAM for 100,000+ rows).
 * **Multi-Format Support**: Reads `.xlsx`, `.xlsm`, `.xlsb`, and legacy `.xls` (Excel 97–2003).
-* **Dynamic Table Anchor Detection**: Automatically skips decorative preamble rows, project logos, and administrative metadata to lock onto the actual data table.
+* **Deep Dynamic Header Scanning (Up to 60 Rows)**: Scans candidate header rows down to row 60, allowing the parser to reliably navigate past extensive corporate title blocks, project management metadata, engineer logos, and administrative approval blocks. Includes adaptive role fallbacks for schedules where explicit "Unit" column headers are absent.
+* **Context-Aware Bill Discrimination (`IsNonBillSheet`)**: Employs structural regex filters to isolate auxiliary summary cover sheets (`Tender Summary`, `General Summary`, `Index`) while preserving active pricing schedules that happen to use summary terminology (e.g. `Bill 01 - Summary of Earthworks`, `جدول رقم 1 - ملخص الأعمال الترابية`).
 
 ---
 
@@ -65,7 +66,19 @@ The `SemanticColumnResolver` automatically identifies column roles across arbitr
 * **Total Amount (`TotalAmount`)**:
   `total amount`, `total price`, `amount`, `total`, `net amount`, `montant`, `الإجمالي`, `المبلغ`, `القيمة`, `إجمالي القيمة`, `جملة`
 
-### 3.2 Statistical Data-Type Heuristics (Headerless Fallback):
+### 3.2 Composite Rate Arbitration Protocol (Split vs. All-In Rates)
+Contractors often split line item rates across multiple columns (e.g., Supply Rate + Install Rate) or include both sub-rates and a combined all-in unit rate alongside the total row amount. The resolver applies strict hierarchical precedence:
+
+1. **Composite / All-In Unit Rate Priority (`CompositeOrTotalRatePattern`)**:
+   Matches patterns such as `Total Unit Rate`, `All-in Rate`, `Combined Rate`, `Composite Rate`, `إجمالي الفئة`, `فئة شاملة`, `إجمالي سعر الوحدة`, `السعر الإجمالي للوحدة`.
+   * When present, this column is immediately locked as the primary unit rate source.
+2. **Partial Rate Demotion (`PartialRatePattern`)**:
+   Matches sub-rate columns like `Supply Rate`, `Installation Rate`, `Erection Rate`, `سعر توريد`, `سعر تركيب`, `مصنعيات`, `توريدات`.
+   * Partial rate columns are never selected over a composite rate.
+3. **Total Amount Guard**:
+   Regex boundary checks strictly distinguish all-in unit rate (`إجمالي الفئة`) from total row amount (`إجمالي المبلغ`, `Total Amount`), preventing extended row sums from corrupting unit prices.
+
+### 3.3 Statistical Data-Type Heuristics (Headerless Fallback):
 If a sheet lacks standard text headers, the resolver automatically executes statistical analysis:
 1. **Description Column**: Column exhibiting the highest average string length (>60 characters) with zero numeric tokens.
 2. **Unit Column**: Column exhibiting repetitive recognized engineering unit tokens (`M3`, `M2`, `LM`, `KG`, `TON`, `NO`, `LS`, `م3`, `م2`, `م.ط`, `عدد`, `مقطوعية`).

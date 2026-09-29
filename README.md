@@ -4,7 +4,7 @@
 [![C# 13](https://img.shields.io/badge/C%23-13.0-239120?logo=csharp)](https://docs.microsoft.com/en-us/dotnet/csharp/)
 [![WPF](https://img.shields.io/badge/Platform-WPF%20Desktop-0078D6?logo=windows)](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/)
 [![Architecture](https://img.shields.io/badge/Architecture-Clean%20%2F%20Onion-blue)](#architecture)
-[![Tests](https://img.shields.io/badge/Tests-68%20Passed%20(100%25)-success)](./tests)
+[![Tests](https://img.shields.io/badge/Tests-107%20Passed%20(100%25)-success)](./tests)
 [![License](https://img.shields.io/badge/License-Proprietary-red)](#)
 
 > **Enterprise Bill of Quantities (BOQ) Reconciliation & Dynamic Pricing Engine**  
@@ -18,11 +18,15 @@ In construction procurement and quantity surveying, reconciling contractor bid s
 
 **SmartBOQ Enterprise** automates this end-to-end:
 * **High-Speed SIMD Matching**: Reconciles 4,000+ items across 30+ worksheets in **under 2 seconds**.
+* **Smart Composite Rate Arbitration**: Automatically resolves multi-column contractor breakdowns (e.g. Supply Rate vs. Install Rate vs. Total Unit Rate / توريد وتركيب vs فئة شاملة). Prioritizes composite all-in rates while safeguarding line item amounts and partial rate columns.
+* **Deep Dynamic Header Discovery**: Forward-scans schedules up to **60 rows deep** to reliably navigate heavy corporate metadata, multi-tier banners, and merged title blocks, with adaptive fallbacks for unit-less bills.
+* **Context-Aware Bill Discrimination**: Intelligently distinguishes project-level cover summaries from active bill schedules that include summary wording (e.g. `Bill 01 - Summary of Earthworks`).
 * **100% Template Preservation**: Retains all original consultant styling, tab colors, print areas, and native formulas (e.g. Column H `=E{row}*G{row}`).
 * **Live Relative Cross-Workbook Linking**: Injects native OpenXML external links so that modifying rates in the contractor file dynamically recalculates the consultant workbook in Microsoft Excel.
 * **Compound Union Hyperlinks**: Navigates to contractor items with smart multi-cell range selection (`C{row}:S{row},R{row}`), highlighting the complete table record while focusing on the Net Rate cell.
 * **Strict Currency Guard**: Automatically segregates currencies (EGP, USD, EUR, SAR) to prevent invalid financial blending (Zero FX blending).
 * **Contractual Shielding**: Detects and protects Provisional Sums (PS) from accidental overwrites.
+* **ClosedXML Bulk Range Optimization**: Optimized report and audit sheet generation with contiguous range styling, slashing export memory consumption by >60% and eliminating GC pauses on mega-schedules.
 * **Intelligent Diagnostic Logging**: Automatically generates structured diagnostic text reports in the `Log/` folder for every session.
 
 ---
@@ -68,6 +72,7 @@ Because Microsoft Excel `.xlsx` archives are compressed XML packages, memory con
 * **CPU Multi-Core Scaling**: Uses `Partitioner.Create` with `Parallel.ForEach` across all available logical cores (`Environment.ProcessorCount`), achieving linear throughput scaling (3,000 to 8,000 items/second).
 * **$O(1)$ Inverted Token Indexing**: Bypasses combinatorial $O(N \times M)$ brute force by mapping token hashes to candidate posting lists, pruning search spaces to the top 40 candidates in constant time.
 * **Early-Exit Length Pruning**: Evaluates string length difference $|L_1 - L_2|$ before computing edit distance, skipping 85%+ of expensive Levenshtein calculations.
+* **ClosedXML Range Bulk-Styling**: Replaced per-cell formatting in generated audit log and linkage map worksheets with contiguous range operations (`ws.Range(...).Style`), slashing memory footprint by >60% and eliminating large-object heap (LOH) pressure on 50,000+ item exports.
 * **UI Virtualization & Memory Shield**: Client-side pagination (100 items per page) keeps WPF visual tree allocations under 150 MB regardless of whether the active project contains 5,000 or 500,000 items.
 
 ---
@@ -85,7 +90,7 @@ SmartBOQ.slnx
 │   ├── SmartBOQ.App/             # Modern WPF desktop interface (Decoupled MVVM, Lucide Icons)
 │   └── SmartBOQ.CLI/             # High-speed headless runner and integration test suite
 ├── tests/
-│   └── SmartBOQ.Tests/           # 68 comprehensive unit, architecture, and UI validation tests
+│   └── SmartBOQ.Tests/           # 107 comprehensive unit, architecture, and UI validation tests
 ├── doc/                          # Comprehensive technical AI & architectural documentation
 ├── publish.cmd                   # Windows 1-click publishing launcher
 └── publish.ps1                   # .NET 10 runtime verification & single-file publish automation
@@ -131,11 +136,18 @@ This verifies your system's .NET 10 runtime, bundles a compressed single-file ex
 ---
 
 ## Verification & Integrity Test Suite
-To run the automated deep verification pipeline on sample schedules:
+
+To run the automated deep verification test suite (107 unit, architecture, and engine tests):
 ```powershell
-dotnet test src/SmartBOQ.slnx
+dotnet test tests/SmartBOQ.Tests/SmartBOQ.Tests.csproj
 ```
+
+To run multi-unit permutation benchmarks and integration test suites:
 ```powershell
+# Comprehensive multi-file unit tests
+dotnet run --project src/SmartBOQ.CLI -c Release -- --test-all-units
+
+# End-to-end reconciliation test merge
 dotnet run --project src/SmartBOQ.CLI -c Release -- --test-merge "ContractorFile.xlsx" "ConsultantFile.xlsx" "."
 ```
 

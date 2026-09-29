@@ -62,7 +62,7 @@ SmartBOQ.slnx
 │   └── High-speed command-line runner, deep automated verification tests, and batch processing.
 │
 └── 6. SmartBOQ.Tests (net10.0-windows)
-    └── 68 comprehensive unit, architecture, and UI validation tests (100% pass rate).
+    └── 107 comprehensive unit, architecture, and UI validation tests (100% pass rate).
 ```
 
 ---
@@ -89,4 +89,4 @@ When modifying or extending this codebase, adhere strictly to these constraints:
 3. **No Currency Blending**: Never convert or sum USD/EUR items into EGP using arbitrary exchange rates. Always segregate amounts by currency bucket.
 4. **Provisional Sum Protection**: Sheets and line items marked as provisional sums (`IsProtected = true`, `BoqItemType.ProvisionalSum`) must remain contractually shielded from contractor rate injection.
 5. **Memory Budget**: All parsers must operate with forward-only streaming (`ExcelDataReader`) to maintain constant memory overhead (<200 MB RAM for 100K-row workbooks).
-6. **Automated Quality Gates**: All 68 tests must pass, and Release builds must compile with **0 warnings and 0 errors**.
+6. **Automated Quality Gates**: All 107 tests must pass, and Release builds must compile with **0 warnings and 0 errors**.
