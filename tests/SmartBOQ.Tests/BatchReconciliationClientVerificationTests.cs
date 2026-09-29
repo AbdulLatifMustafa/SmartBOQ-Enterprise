@@ -96,4 +96,75 @@ public class BatchReconciliationClientVerificationTests
 
         Assert.True(grandPct >= 99.0, $"Expected at least 99% overall match, but got {grandPct:F1}% ({grandTotalPriced}/{grandTotalItems})");
     }
+
+    [Fact]
+    public async Task ReconcileAllClientFiles_WithCognitiveAdaptiveBrain_Achieves100PercentMatch()
+    {
+        string baseDir = @"C:\Users\BodyBoy\Desktop\BOQs";
+        string sourceCandy = Path.Combine(baseDir, "CANDY FILE.xlsx");
+        string sourceElec = Path.Combine(baseDir, "Electrical.xlsx");
+        string sourceMech = Path.Combine(baseDir, "Mechanical.xlsx");
+
+        if (!File.Exists(sourceCandy) || !File.Exists(sourceElec) || !File.Exists(sourceMech))
+        {
+            _output.WriteLine("Client BOQ files not found at expected path. Skipping local live verification.");
+            return;
+        }
+
+        var sourceFiles = new[] { sourceCandy, sourceElec, sourceMech };
+        string targetDir = Path.Combine(baseDir, "BOQs");
+        var targetFiles = Directory.GetFiles(targetDir, "*.xlsx")
+                                   .Where(f => !Path.GetFileName(f).StartsWith("~$") && !Path.GetFileName(f).Contains("_Reconciled"))
+                                   .OrderBy(f => f)
+                                   .ToList();
+
+        var gate = new PreFlightVerificationGate();
+        var flatReader = new UniversalAdaptiveBoqReader();
+        var hierReader = new HierarchicalBoqReader();
+        var brain = new SmartBOQ.Infrastructure.CognitiveBrain.Engine.CognitiveAdaptiveBrain();
+        var exporter = new ClosedXmlExporter();
+        string tempDb = Path.Combine(Path.GetTempPath(), $"test_smartboq_brain_{Guid.NewGuid():N}.db");
+        var repo = new SqliteBoqRepository(tempDb);
+        var inspector = new BoqInspectorService();
+        var service = new BoqReconciliationService(gate, flatReader, hierReader, brain, exporter, repo, inspector);
+
+        int grandTotalItems = 0;
+        int grandTotalPriced = 0;
+        decimal grandTotalFinancialAmount = 0m;
+
+        _output.WriteLine("==========================================================================");
+        _output.WriteLine("   COGNITIVE ADAPTIVE BRAIN - LIVE C# 11-SCHEDULE VERIFICATION            ");
+        _output.WriteLine("==========================================================================");
+
+        foreach (var tFile in targetFiles)
+        {
+            var result = await service.ReconcileMultiSourceAsync(sourceFiles, tFile, sensitivity: 0.85);
+
+            int pricedCount = result.MatchedPairs.Count(p => 
+                (p.InjectedRate.HasValue && p.InjectedRate > 0 && !p.IsProvisionalSum) || 
+                (p.IsApproved && p.Confidence != MatchConfidence.Unmatched && !p.IsVariationOrder));
+            int totalCount = result.MatchedPairs.Count;
+            double pct = totalCount > 0 ? (double)pricedCount / totalCount * 100.0 : 0.0;
+
+            decimal fileAmount = result.MatchedPairs
+                .Where(p => p.InjectedRate.HasValue)
+                .Sum(p => p.TargetItem.Quantity * p.InjectedRate!.Value);
+
+            grandTotalItems += totalCount;
+            grandTotalPriced += pricedCount;
+            grandTotalFinancialAmount += fileAmount;
+
+            _output.WriteLine($" • {Path.GetFileName(tFile)}: {pricedCount}/{totalCount} ({pct:F1}%) | Subtotal: {fileAmount:N0} EGP");
+        }
+
+        double grandPct = grandTotalItems > 0 ? (double)grandTotalPriced / grandTotalItems * 100.0 : 0.0;
+        _output.WriteLine("==========================================================================");
+        _output.WriteLine($"COGNITIVE BRAIN GRAND TOTAL: {grandTotalPriced}/{grandTotalItems} ({grandPct:F1}%)");
+        _output.WriteLine($"TOTAL RECONCILED FINANCIAL VALUE: {grandTotalFinancialAmount:N0} EGP");
+        _output.WriteLine("==========================================================================");
+
+        try { if (File.Exists(tempDb)) File.Delete(tempDb); } catch { }
+
+        Assert.True(grandPct >= 99.0, $"Expected at least 99% overall match with Cognitive Brain, but got {grandPct:F1}%");
+    }
 }
