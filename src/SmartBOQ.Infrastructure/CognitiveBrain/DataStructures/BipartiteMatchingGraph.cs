@@ -66,6 +66,8 @@ public sealed class BipartiteMatchingGraph
 
         var sourceConsumed = new HashSet<int>(_sourceCount);
         var targetClaimed = new HashSet<int>(_targetCount);
+        var sourceToTarget = new int[_sourceCount];
+        Array.Fill(sourceToTarget, -1);
 
         // Pass 1: High-affinity greedy assignment
         foreach (var edge in _edges)
@@ -73,6 +75,7 @@ public sealed class BipartiteMatchingGraph
             if (!targetClaimed.Contains(edge.TargetIndex) && !sourceConsumed.Contains(edge.SourceIndex))
             {
                 targetToSource[edge.TargetIndex] = edge.SourceIndex;
+                sourceToTarget[edge.SourceIndex] = edge.TargetIndex;
                 matchScores[edge.TargetIndex] = edge.Weight;
                 targetClaimed.Add(edge.TargetIndex);
                 sourceConsumed.Add(edge.SourceIndex);
@@ -87,16 +90,8 @@ public sealed class BipartiteMatchingGraph
 
             if (!targetClaimed.Contains(t))
             {
-                // Find who currently has source 's'
-                int currentHolder = -1;
-                for (int i = 0; i < _targetCount; i++)
-                {
-                    if (targetToSource[i] == s)
-                    {
-                        currentHolder = i;
-                        break;
-                    }
-                }
+                // Instant O(1) reverse lookup of who currently has source 's'
+                int currentHolder = s < sourceToTarget.Length ? sourceToTarget[s] : -1;
 
                 // If s is taken, check if swapping creates a higher global score
                 if (currentHolder >= 0)
@@ -120,10 +115,12 @@ public sealed class BipartiteMatchingGraph
                     {
                         // Augmenting path swap: give s to t, and give nextBestSource to currentHolder
                         targetToSource[t] = s;
+                        sourceToTarget[s] = t;
                         matchScores[t] = edge.Weight;
                         targetClaimed.Add(t);
 
                         targetToSource[currentHolder] = nextBestSource;
+                        sourceToTarget[nextBestSource] = currentHolder;
                         matchScores[currentHolder] = currentHolderNextBest;
                         sourceConsumed.Add(nextBestSource);
                     }

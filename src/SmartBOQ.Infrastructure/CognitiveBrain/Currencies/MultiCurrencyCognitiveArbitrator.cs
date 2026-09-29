@@ -37,12 +37,12 @@ public sealed class MultiCurrencyCognitiveArbitrator
         }
 
         string s = text.ToString();
-        if (s.Contains("USD", StringComparison.OrdinalIgnoreCase) || s.Contains("DOLLAR", StringComparison.OrdinalIgnoreCase)) return CurrencyType.USD;
-        if (s.Contains("EUR", StringComparison.OrdinalIgnoreCase) || s.Contains("EURO", StringComparison.OrdinalIgnoreCase)) return CurrencyType.EUR;
-        if (s.Contains("EGP", StringComparison.OrdinalIgnoreCase) || s.Contains("L.E.", StringComparison.OrdinalIgnoreCase) || s.Contains("ج.م", StringComparison.OrdinalIgnoreCase) || s.Contains("جنيه", StringComparison.OrdinalIgnoreCase)) return CurrencyType.EGP;
+        if (s.Contains("USD", StringComparison.OrdinalIgnoreCase) || s.Contains("DOLLAR", StringComparison.OrdinalIgnoreCase) || s.Contains("دولار", StringComparison.OrdinalIgnoreCase)) return CurrencyType.USD;
+        if (s.Contains("EUR", StringComparison.OrdinalIgnoreCase) || s.Contains("EURO", StringComparison.OrdinalIgnoreCase) || s.Contains("يورو", StringComparison.OrdinalIgnoreCase)) return CurrencyType.EUR;
+        if (s.Contains("EGP", StringComparison.OrdinalIgnoreCase) || s.Contains("L.E.", StringComparison.OrdinalIgnoreCase) || s.Contains("ج.م", StringComparison.OrdinalIgnoreCase) || s.Contains("جنيه", StringComparison.OrdinalIgnoreCase) || s.Contains("جنية", StringComparison.OrdinalIgnoreCase)) return CurrencyType.EGP;
         if (s.Contains("SAR", StringComparison.OrdinalIgnoreCase) || s.Contains("ريال", StringComparison.OrdinalIgnoreCase)) return CurrencyType.SAR;
         if (s.Contains("AED", StringComparison.OrdinalIgnoreCase) || s.Contains("درهم", StringComparison.OrdinalIgnoreCase)) return CurrencyType.AED;
-        if (s.Contains("GBP", StringComparison.OrdinalIgnoreCase)) return CurrencyType.GBP;
+        if (s.Contains("GBP", StringComparison.OrdinalIgnoreCase) || s.Contains("استرليني", StringComparison.OrdinalIgnoreCase) || s.Contains("باوند", StringComparison.OrdinalIgnoreCase)) return CurrencyType.GBP;
         if (s.Contains("KWD", StringComparison.OrdinalIgnoreCase) || s.Contains("دينار", StringComparison.OrdinalIgnoreCase)) return CurrencyType.KWD;
 
         return CurrencyType.Unknown;

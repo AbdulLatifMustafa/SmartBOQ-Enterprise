@@ -112,14 +112,26 @@ public sealed class MultiDimensionalMetricIndex
         var candidateScores = ArrayPool<int>.Shared.Rent(_items.Length);
         Array.Clear(candidateScores, 0, _items.Length);
 
-        // A. Score via inverted token hits
+        // A. Score via inverted token hits with dynamic IDF weighting
+        int halfThreshold = (int)(_items.Length * 0.40);
         foreach (ulong hash in targetTokens.Hashes)
         {
             if (_invertedTokenIndex.TryGetValue(hash, out var list))
             {
+                // IDF Dampening: High-frequency terms get lower weight; rare distinctive technical terms get higher weight
+                int weight = 10;
+                if (_items.Length > 20 && list.Count > halfThreshold)
+                {
+                    weight = 2;
+                }
+                else if (list.Count <= 6)
+                {
+                    weight = 25;
+                }
+
                 for (int idx = 0; idx < list.Count; idx++)
                 {
-                    candidateScores[list[idx]] += 10;
+                    candidateScores[list[idx]] += weight;
                 }
             }
         }

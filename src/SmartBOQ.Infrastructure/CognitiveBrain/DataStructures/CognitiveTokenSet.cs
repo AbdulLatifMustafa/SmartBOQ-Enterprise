@@ -227,6 +227,27 @@ public readonly struct CognitiveTokenSet
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static ReadOnlySpan<char> StemWord(ReadOnlySpan<char> word)
     {
+        // Arabic article and preposition prefix stripping
+        if (word.Length >= 4)
+        {
+            if (word.StartsWith("ال"))
+            {
+                word = word[2..];
+            }
+            else if (word.StartsWith("وال") && word.Length >= 5)
+            {
+                word = word[3..];
+            }
+            else if (word.StartsWith("بال") && word.Length >= 5)
+            {
+                word = word[3..];
+            }
+            else if (word.StartsWith("لل") && word.Length >= 5)
+            {
+                word = word[2..];
+            }
+        }
+
         if (word.Length > 5 && word.EndsWith("ing", StringComparison.OrdinalIgnoreCase))
         {
             return word[..^3];

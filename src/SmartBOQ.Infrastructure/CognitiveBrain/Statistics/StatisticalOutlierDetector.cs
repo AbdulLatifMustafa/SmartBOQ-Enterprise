@@ -1,5 +1,6 @@
 using MathNet.Numerics.Statistics;
 using SmartBOQ.Domain.Models;
+using SmartBOQ.Infrastructure.CognitiveBrain.DataStructures;
 
 namespace SmartBOQ.Infrastructure.CognitiveBrain.Statistics;
 
@@ -56,14 +57,16 @@ public sealed class StatisticalOutlierDetector
                 : (stdDev > 0.0001 ? (r - mean) / stdDev : 0.0);
             bool isOutlier = Math.Abs(modZ) >= 3.5;
 
-            // Decimal shift detection: ratio approximately 10x, 100x, or 0.1x of median
+            // Decimal shift detection: ratio approximately 10x, 100x, 1000x, 0.1x, or 0.01x of median
             bool isDecimalShift = false;
             if (median > 0)
             {
                 double ratio = r / median;
                 if ((ratio >= 9.5 && ratio <= 10.5) || 
                     (ratio >= 95.0 && ratio <= 105.0) || 
-                    (ratio >= 0.095 && ratio <= 0.105))
+                    (ratio >= 950.0 && ratio <= 1050.0) ||
+                    (ratio >= 0.095 && ratio <= 0.105) ||
+                    (ratio >= 0.0095 && ratio <= 0.0105))
                 {
                     isDecimalShift = true;
                 }
@@ -102,5 +105,58 @@ public sealed class StatisticalOutlierDetector
         }
 
         return reports;
+    }
+
+    /// <summary>
+    /// Analyzes unit rates stratified by engineering dimension class (Volume, Area, Weight, Count, etc.).
+    /// Prevents cross-trade false alarms (e.g. comparing bulk excavation m3 rates with generator lump-sum rates).
+    /// </summary>
+    public IReadOnlyList<RateAnomalyReport> AuditRatesStratified(IReadOnlyList<BoqItem> items)
+    {
+        var pricedItems = items.Where(i => i.UnitRate.HasValue && i.UnitRate.Value > 0).ToList();
+        if (pricedItems.Count < 4)
+        {
+            return Array.Empty<RateAnomalyReport>();
+        }
+
+        // Group by physical dimension class
+        var dimGroups = pricedItems.GroupBy(i => QuantileScaleLattice.ClassifyUnit(i.Unit)).ToList();
+        var allReports = new List<RateAnomalyReport>();
+
+        foreach (var group in dimGroups)
+        {
+            var groupItems = group.ToList();
+            if (groupItems.Count >= 4)
+            {
+                var groupReports = AuditRates(groupItems);
+                allReports.AddRange(groupReports);
+            }
+        }
+
+        // Check math inconsistency for any items not covered above
+        var reportedItemIds = new HashSet<string>(allReports.Select(r => r.Item.Id));
+        foreach (var item in pricedItems)
+        {
+            if (!reportedItemIds.Contains(item.Id) && item.TotalAmount.HasValue && item.Quantity > 0 && item.UnitRate.HasValue)
+            {
+                decimal expected = Math.Round(item.Quantity * item.UnitRate.Value, 2);
+                decimal actual = Math.Round(item.TotalAmount.Value, 2);
+                if (Math.Abs(expected - actual) > 1.0m)
+                {
+                    allReports.Add(new RateAnomalyReport
+                    {
+                        Item = item,
+                        UnitRate = item.UnitRate.Value,
+                        ModifiedZScore = 0,
+                        IsRateOutlier = false,
+                        IsDecimalShiftSuspected = false,
+                        IsMathInconsistent = true,
+                        AnomalyDescription = $"Amount ({item.TotalAmount}) differs from Qty*Rate ({item.Quantity * item.UnitRate})."
+                    });
+                }
+            }
+        }
+
+        return allReports;
     }
 }
