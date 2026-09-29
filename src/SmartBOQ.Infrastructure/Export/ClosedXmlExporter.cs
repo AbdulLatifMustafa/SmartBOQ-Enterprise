@@ -101,14 +101,24 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                         int rateCol = pair.TargetItem.RateColumnIndex > 0 ? pair.TargetItem.RateColumnIndex : 7;
                         var rateCell = ws.Cell(anchorRow, rateCol);
 
+                        if (rateCell.HasFormula)
+                        {
+                            continue;
+                        }
+
                         if (pair.IsApproved && pair.InjectedRate.HasValue)
                         {
                             // Write numeric rate value without modifying formatting
                             rateCell.Value = (double)pair.InjectedRate.Value;
                         }
+                        else if (pair.TargetItem.OriginalRate.HasValue)
+                        {
+                            // Preserve approved baseline rate in target cell
+                            rateCell.Value = (double)pair.TargetItem.OriginalRate.Value;
+                        }
                         else
                         {
-                            // Clear rate cell for unpriced or unmatched items
+                            // Clear rate cell only for unpriced items without formulas
                             rateCell.Clear(XLClearOptions.Contents);
                         }
                     }

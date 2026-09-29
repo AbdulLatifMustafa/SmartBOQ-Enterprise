@@ -113,7 +113,7 @@ public sealed partial class MainViewModel
 
         try
         {
-            bool hasNewFiles = false;
+            var newInfos = new List<BoqFileInfo>();
 
             foreach (var path in filePaths)
             {
@@ -128,36 +128,23 @@ public sealed partial class MainViewModel
                     IngestedFiles.Remove(existing);
                 }
 
-                // Determine file role dynamically
-                BoqFileRole role;
-                bool hasContractor = IngestedFiles.Any(f => f.Role == BoqFileRole.ContractorPriced);
-                bool hasConsultant = IngestedFiles.Any(f => f.Role == BoqFileRole.ConsultantTarget);
-
-                if (!hasContractor)
-                {
-                    role = BoqFileRole.ContractorPriced;
-                    FileAPath = fullPath;
-                }
-                else if (!hasConsultant)
-                {
-                    role = BoqFileRole.ConsultantTarget;
-                    FileBPath = fullPath;
-                }
-                else
-                {
-                    role = BoqFileRole.SupplementaryRates;
-                }
-
-                var info = await _inspector.InspectWorkbookAsync(fullPath, role);
-                IngestedFiles.Add(info);
-                SelectedFileForDetails = info;
-                hasNewFiles = true;
+                // Inspect file structure and contents (content-based role inference)
+                var info = await _inspector.InspectWorkbookAsync(fullPath, preferredRole: null);
+                newInfos.Add(info);
             }
 
-            if (hasNewFiles)
+            if (newInfos.Count == 0) return;
+
+            foreach (var info in newInfos)
             {
-                await UpdateDiscoveryTopologyAsync();
+                IngestedFiles.Add(info);
             }
+
+            // Dynamically harmonize and reconcile file roles based on actual content & prices
+            ReconcileFileRoles();
+
+            SelectedFileForDetails = newInfos.LastOrDefault() ?? IngestedFiles.FirstOrDefault();
+            await UpdateDiscoveryTopologyAsync();
         }
         catch (Exception ex)
         {
@@ -170,6 +157,59 @@ public sealed partial class MainViewModel
     }
 
     /// <summary>
+    /// Reconciles and harmonizes file roles across all ingested workbooks based on pricing content and metadata.
+    /// </summary>
+    public void ReconcileFileRoles()
+    {
+        if (IngestedFiles.Count == 0) return;
+
+        // Rule 1: Files with 0 priced items can NEVER be ContractorPriced or SupplementaryRates.
+        // They are 100% ConsultantTarget schedules waiting for rates!
+        foreach (var file in IngestedFiles.Where(f => !f.HasPricedRates))
+        {
+            file.Role = BoqFileRole.ConsultantTarget;
+        }
+
+        // Rule 2: Files containing positive rates
+        var pricedFiles = IngestedFiles.Where(f => f.HasPricedRates).ToList();
+        if (pricedFiles.Count > 0)
+        {
+            // Pick exactly one primary contractor pricing file:
+            // Prefer file explicitly named CANDY/CCS/Contractor, or with highest priced items count
+            var primaryContractor = pricedFiles.FirstOrDefault(f => f.FileName.Contains("candy", StringComparison.OrdinalIgnoreCase) ||
+                                                                    f.FileName.Contains("ccs", StringComparison.OrdinalIgnoreCase))
+                                   ?? pricedFiles.OrderByDescending(f => f.PricedItemsCount).FirstOrDefault();
+
+            foreach (var pf in pricedFiles)
+            {
+                if (pf == primaryContractor)
+                {
+                    pf.Role = BoqFileRole.ContractorPriced;
+                }
+                else if (pf.DetectedRole == BoqFileRole.ConsultantTarget)
+                {
+                    pf.Role = BoqFileRole.ConsultantTarget;
+                }
+                else
+                {
+                    pf.Role = BoqFileRole.SupplementaryRates;
+                }
+            }
+        }
+
+        // Rule 3: Synchronize primary paths (prioritize package with highest bill items)
+        var contractor = IngestedFiles.FirstOrDefault(f => f.Role == BoqFileRole.ContractorPriced);
+        var consultant = IngestedFiles
+            .Where(f => f.Role == BoqFileRole.ConsultantTarget)
+            .OrderByDescending(f => f.TotalEstimatedItems)
+            .FirstOrDefault()
+            ?? IngestedFiles.FirstOrDefault(f => f.Role == BoqFileRole.ConsultantTarget);
+
+        FileAPath = contractor?.FilePath ?? string.Empty;
+        FileBPath = consultant?.FilePath ?? string.Empty;
+    }
+
+    /// <summary>
     /// Updates discovery state, sheet topology, and column routing without clearing IngestedFiles.
     /// </summary>
     public async Task UpdateDiscoveryTopologyAsync()
@@ -178,7 +218,11 @@ public sealed partial class MainViewModel
         {
             // Sync primary file paths
             var contractorFile = IngestedFiles.FirstOrDefault(f => f.Role == BoqFileRole.ContractorPriced);
-            var consultantFile = IngestedFiles.FirstOrDefault(f => f.Role == BoqFileRole.ConsultantTarget);
+            var consultantFile = IngestedFiles
+                .Where(f => f.Role == BoqFileRole.ConsultantTarget)
+                .OrderByDescending(f => f.TotalEstimatedItems)
+                .FirstOrDefault()
+                ?? IngestedFiles.FirstOrDefault(f => f.Role == BoqFileRole.ConsultantTarget);
 
             if (contractorFile != null) FileAPath = contractorFile.FilePath;
             if (consultantFile != null) FileBPath = consultantFile.FilePath;
@@ -273,16 +317,6 @@ public sealed partial class MainViewModel
     public void SetPrimaryTarget(BoqFileInfo? file)
     {
         if (file == null) return;
-
-        // Demote existing target
-        foreach (var f in IngestedFiles)
-        {
-            if (f.Role == BoqFileRole.ConsultantTarget)
-            {
-                f.Role = BoqFileRole.SupplementaryRates;
-            }
-        }
-
         file.Role = BoqFileRole.ConsultantTarget;
         FileBPath = file.FilePath;
         _ = UpdateDiscoveryTopologyAsync();
@@ -291,15 +325,6 @@ public sealed partial class MainViewModel
     public void SetPrimarySource(BoqFileInfo? file)
     {
         if (file == null) return;
-
-        foreach (var f in IngestedFiles)
-        {
-            if (f.Role == BoqFileRole.ContractorPriced)
-            {
-                f.Role = BoqFileRole.SupplementaryRates;
-            }
-        }
-
         file.Role = BoqFileRole.ContractorPriced;
         FileAPath = file.FilePath;
         _ = UpdateDiscoveryTopologyAsync();
@@ -314,6 +339,17 @@ public sealed partial class MainViewModel
         {
             InspectedSheets.Add(s);
         }
+
+        if (file.Role == BoqFileRole.ConsultantTarget)
+        {
+            FileBPath = file.FilePath;
+            _ = AutoLinkSheetsAsync();
+        }
+        else if (file.Role == BoqFileRole.ContractorPriced || file.Role == BoqFileRole.SupplementaryRates)
+        {
+            FileAPath = file.FilePath;
+        }
+
         SelectedCompareSubTab = 0; // Focus on tables inspector
     }
 
@@ -328,8 +364,10 @@ public sealed partial class MainViewModel
 
     public async Task AutoLinkSheetsAsync()
     {
-        var targetFile = IngestedFiles.FirstOrDefault(f => f.Role == BoqFileRole.ConsultantTarget);
-        var sourceFiles = IngestedFiles.Where(f => f != targetFile).ToList();
+        var targetFile = IngestedFiles.FirstOrDefault(f => f.FilePath.Equals(FileBPath, StringComparison.OrdinalIgnoreCase))
+                         ?? IngestedFiles.Where(f => f.Role == BoqFileRole.ConsultantTarget).OrderByDescending(f => f.TotalEstimatedItems).FirstOrDefault()
+                         ?? IngestedFiles.FirstOrDefault(f => f.Role == BoqFileRole.ConsultantTarget);
+        var sourceFiles = IngestedFiles.Where(f => f.Role != BoqFileRole.ConsultantTarget && File.Exists(f.FilePath)).ToList();
 
         if (targetFile == null || sourceFiles.Count == 0) return;
 

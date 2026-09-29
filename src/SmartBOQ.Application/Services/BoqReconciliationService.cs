@@ -25,6 +25,21 @@ public sealed record ReconciliationResult
 }
 
 /// <summary>
+/// Result of a single reconciled and exported target in a batch multi-target reconciliation run.
+/// </summary>
+public sealed record BatchTargetResult
+{
+    public required string TargetFilePath { get; init; }
+    public required string OutputFilePath { get; init; }
+    public string TargetFileName => Path.GetFileName(TargetFilePath);
+    public string OutputFileName => Path.GetFileName(OutputFilePath);
+    public required ReconciliationResult Result { get; init; }
+    public int TotalItems => Result.TotalTargetItems;
+    public int MatchedItems => Result.ExactMatches + Result.HighFuzzyMatches;
+    public double MatchRate => TotalItems > 0 ? (double)MatchedItems / TotalItems * 100.0 : 0.0;
+}
+
+/// <summary>
 /// Application orchestration service coordinating verification, reading, matching,
 /// segregated financial calculations, and template export.
 /// </summary>
@@ -59,7 +74,7 @@ public sealed class BoqReconciliationService
     /// <summary>
     /// Inspects an Excel workbook structure, detecting sheets, estimated rows, and columns without full model loading.
     /// </summary>
-    public Task<BoqFileInfo> InspectWorkbookAsync(string filePath, BoqFileRole role = BoqFileRole.ContractorPriced, CancellationToken ct = default)
+    public Task<BoqFileInfo> InspectWorkbookAsync(string filePath, BoqFileRole? role = null, CancellationToken ct = default)
     {
         if (_inspector != null)
         {
@@ -340,6 +355,97 @@ public sealed class BoqReconciliationService
             CurrencySummaries = currencySummaries,
             ElapsedTime = stopwatch.Elapsed
         };
+    }
+
+    /// <summary>
+    /// Executes batch multi-target reconciliation:
+    /// Ingests N pricing/contractor source workbooks ONCE into an in-memory knowledge graph,
+    /// reconciles against M consultant target workbooks,
+    /// and exports M distinct reconciled workbooks preserving their respective structures, sheets, and formulas.
+    /// </summary>
+    public async Task<IReadOnlyList<BatchTargetResult>> ReconcileBatchMultiTargetAsync(
+        IReadOnlyList<string> sourceFilePaths,
+        IReadOnlyList<string> targetFilePaths,
+        string outputDirectory,
+        double sensitivity = 0.85,
+        ColumnMappingModel? columnMappings = null,
+        IProgress<(int current, int total, string targetName)>? progress = null,
+        CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var validSourcePaths = sourceFilePaths.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var validTargetPaths = targetFilePaths.Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+        if (validSourcePaths.Count == 0)
+        {
+            throw new FileNotFoundException("No valid source contractor files found for reconciliation.");
+        }
+        if (validTargetPaths.Count == 0)
+        {
+            throw new FileNotFoundException("No valid consultant target files found for reconciliation.");
+        }
+
+        Directory.CreateDirectory(outputDirectory);
+
+        // Step 1: Ingest and index all N source workbooks once into memory
+        var sourceTasks = validSourcePaths.Select(path => _flatReader.ReadContractorFlatBoqAsync(path, columnMappings, ct)).ToList();
+        var sourceLists = await Task.WhenAll(sourceTasks).ConfigureAwait(false);
+        var allSourceItems = sourceLists.SelectMany(list => list).ToList();
+
+        var batchResults = new List<BatchTargetResult>(validTargetPaths.Count);
+        string primarySourcePath = validSourcePaths[0];
+
+        // Step 2: Reconcile each target workbook in high-speed sequence
+        for (int i = 0; i < validTargetPaths.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            string targetPath = validTargetPaths[i];
+            string targetName = Path.GetFileName(targetPath);
+
+            progress?.Report((i + 1, validTargetPaths.Count, targetName));
+
+            var sw = Stopwatch.StartNew();
+            var targetSheets = await _hierarchicalReader.ReadConsultantHierarchicalBoqAsync(targetPath, ct).ConfigureAwait(false);
+            var allTargetItems = targetSheets.SelectMany(s => s.Items).ToList();
+
+            var matchedPairs = await _matcher.MatchItemsAsync(allTargetItems, allSourceItems, sensitivity, ct).ConfigureAwait(false);
+
+            // Auto-approve valid matched pairs
+            foreach (var p in matchedPairs)
+            {
+                if (p.InjectedRate.HasValue && !p.IsProvisionalSum && p.Confidence != MatchConfidence.ManualReviewNeeded)
+                {
+                    p.IsApproved = true;
+                }
+            }
+
+            var currencySummaries = ComputeCurrencySummaries(allSourceItems, matchedPairs);
+            sw.Stop();
+
+            var result = new ReconciliationResult
+            {
+                MatchedPairs = matchedPairs,
+                TargetSheets = targetSheets,
+                SourceItems = allSourceItems,
+                CurrencySummaries = currencySummaries,
+                ElapsedTime = sw.Elapsed
+            };
+
+            // Export reconciled workbook
+            string baseName = Path.GetFileNameWithoutExtension(targetPath);
+            string outPath = Path.Combine(outputDirectory, $"{baseName}_Reconciled.xlsx");
+
+            await _exporter.ExportPricedBoqAsync(targetPath, outPath, matchedPairs, primarySourcePath, enableDynamicLinking: true, progress: null, ct: ct).ConfigureAwait(false);
+
+            batchResults.Add(new BatchTargetResult
+            {
+                TargetFilePath = targetPath,
+                OutputFilePath = outPath,
+                Result = result
+            });
+        }
+
+        return batchResults;
     }
 
 

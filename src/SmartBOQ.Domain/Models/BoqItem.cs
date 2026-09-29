@@ -12,11 +12,15 @@ public sealed record BoqItem
     public required string BillNumber { get; init; }
     public string SectionName { get; init; } = string.Empty;
     public string ItemCode { get; init; } = string.Empty;
+    public string SerialNumber { get; init; } = string.Empty;
+    public string LineItemText { get; init; } = string.Empty;
+    public string HierarchyPath { get; init; } = string.Empty;
     public required string Description { get; init; }
     public string NormalizedDescription { get; init; } = string.Empty;
     public string Unit { get; init; } = string.Empty;
     public decimal Quantity { get; init; }
     public decimal? UnitRate { get; init; }
+    public decimal? OriginalRate { get; init; }
     public decimal? TotalAmount { get; init; }
     public int NumberOff { get; init; } = 1;
     public string Currency { get; init; } = "EGP";
@@ -26,6 +30,11 @@ public sealed record BoqItem
     /// Physical sheet name in the Excel workbook (e.g. "Sheet1" in File A, or "Bill 02A-3BR Villa East" in File B).
     /// </summary>
     public string SheetName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// File name of the workbook containing this item (e.g. "04_D_1  Landscape Phase 1_Rev_02.xlsx").
+    /// </summary>
+    public string WorkbookName { get; init; } = string.Empty;
 
     /// <summary>
     /// 1-based Excel row index in the consultant sheet where the rate cell and formula reside.

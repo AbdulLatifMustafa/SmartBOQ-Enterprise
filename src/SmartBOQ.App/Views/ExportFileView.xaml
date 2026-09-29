@@ -12,6 +12,28 @@
             <!-- Configuration & Actions Card -->
             <Border Style="{StaticResource ModernCard}" Margin="0,0,0,20">
                 <StackPanel>
+                    <!-- Fixed Default Output Directory Banner -->
+                    <Border Background="{DynamicResource BrushCardHeader}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <iconPacks:PackIconLucide Grid.Column="0" Kind="FolderCheck" Width="22" Height="22" Foreground="{DynamicResource BrushSuccess}" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="مجلد الحفظ التلقائي الثابت (بجانب البرنامج في Exported_BOQs):" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextSecondary}"/>
+                                <TextBlock Text="{Binding DefaultExportDirectoryDisplay, Mode=OneWay}" FontSize="13.5" FontWeight="Bold" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                            <Button Grid.Column="2" Command="{Binding OpenOutputFolderCommand}" Style="{StaticResource SecondaryBtn}" Padding="12,6" Margin="10,0,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <iconPacks:PackIconLucide Kind="FolderOpen" Width="14" Height="14" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="فتح المجلد" FontSize="12.5" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                    </Border>
+
                     <!-- Reconciled File Path -->
                     <TextBlock Text="1. مسار حفظ ملف المقايسة المسعر النهائي (Reconciled BOQ Schedule):" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" Foreground="{DynamicResource BrushTextPrimary}"/>
                     <Grid Margin="0,0,0,16">
@@ -32,11 +54,38 @@
                     <TextBlock Text="2. مسار لوحة مؤشرات الإدارة والرسوم البيانية (Executive Commercial Dashboard):" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,10" Foreground="{DynamicResource BrushTextPrimary}"/>
                     <TextBox Text="{Binding DashboardFilePath, Mode=OneWay}" IsReadOnly="True" Style="{StaticResource ModernTextBox}" FontSize="13.5" Margin="0,0,0,18" Opacity="0.85"/>
 
+                    <!-- Consolidated Multi-Target ZIP Section (Visible when multiple consultant targets exist) -->
+                    <Border Background="{DynamicResource BrushInputBg}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1.5" CornerRadius="8" Padding="14" Margin="0,0,0,18"
+                            Visibility="{Binding HasMultipleTargets, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <iconPacks:PackIconLucide Kind="Archive" Width="18" Height="18" Foreground="{DynamicResource BrushSuccess}" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="3. دمج كافة المقايسات في حزمة واحدة (Consolidated ZIP Archive):" FontWeight="Bold" FontSize="15" Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock Text="نظراً لوجود عدة مقايسات استشاري، يمكنك دمج وتسعير كافة الملفات دفعة واحدة وضغطها داخل أرشيف ZIP موحد يشمل جميع ملفات الإكسيل المسعرة وداش بورد الإدارة وتقرير التدقيق الفني."
+                                       FontSize="12.5" Foreground="{DynamicResource BrushTextSecondary}" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0" Text="{Binding ZipOutputFilePath, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBox}" FontSize="13.5"/>
+                                <Button Grid.Column="1" Command="{Binding BrowseZipOutputCommand}" Style="{StaticResource SecondaryBtn}" Margin="12,0,0,0" Padding="16,8">
+                                    <StackPanel Orientation="Horizontal">
+                                        <iconPacks:PackIconLucide Kind="FolderOpen" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="تغيير مسار ZIP..." FontSize="13.5" FontWeight="SemiBold"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
                     <TextBlock Text="أوراق العمل والملفات المضمنة في الدمج والتصدير:" FontWeight="SemiBold" FontSize="14.5" Margin="0,4,0,10" Foreground="{DynamicResource BrushTextPrimary}"/>
                     <Border Background="{DynamicResource BrushInputBg}" BorderBrush="{DynamicResource BrushBorder}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,0,20">
                         <StackPanel>
                             <TextBlock Text="• الحفاظ بنسبة 100% على تنسيق وألوان وقوالب الاستشاري دون أي تغيير (33 ورقة عمل)." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
                             <TextBlock Text="• حقن الفئات في العمود G مما يفعل معادلات Excel الأصلية في العمود H تلقائياً." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
+                            <TextBlock Text="• نسخ ملفات الأسعار الأصلية ([Source_Priced]) تلقائياً بجانب المقايسات لسهولة المقارنة والمراجعة المباشرة." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
                             <TextBlock Text="• إنشاء ورقة (Audit_Report): توثق كافة البنود المحقونة ونسب التطابق مع معادلات الربط الحي بالخلايا." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
                             <TextBlock Text="• إنشاء ورقة (Pricing_Linkage_Map): خريطة ربط الأسعار التفاعلية بالربط الديناميكي النسبي بملف المقاول." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
                             <TextBlock Text="• إنشاء ملف مستقل (DP3_Executive_Dashboard.xlsx): لوحة مؤشرات الإدارة والرسوم البيانية وفروق الأسعار." FontSize="13" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,3"/>
@@ -44,12 +93,25 @@
                         </StackPanel>
                     </Border>
 
-                    <Button Command="{Binding ExportCommand}" Style="{StaticResource ModernBtn}" Padding="26,13" HorizontalAlignment="Right">
-                        <StackPanel Orientation="Horizontal">
-                            <iconPacks:PackIconLucide Kind="Download" Width="18" Height="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="تصدير ملف المقايسة والداش بورد وسجلات الربط" FontSize="15" FontWeight="Bold"/>
-                        </StackPanel>
-                    </Button>
+                    <WrapPanel HorizontalAlignment="Right">
+                        <!-- Export All as ZIP Button (Visible when multiple targets) -->
+                        <Button Command="{Binding ExportAllZipCommand}" Style="{StaticResource SuccessBtn}" Padding="22,12" Margin="0,0,12,0"
+                                Visibility="{Binding HasMultipleTargets, Converter={StaticResource BoolToVis}}"
+                                ToolTip="دمج وتسعير كافة مقايسات الاستشاري وتوليد الداش بورد وضغطها في ملف ZIP موحد">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="Archive" Width="18" Height="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="دمج الكل في حزمة ZIP (جميع المقايسات)" FontSize="14.5" FontWeight="Bold"/>
+                            </StackPanel>
+                        </Button>
+
+                        <!-- Standard Single Export Button -->
+                        <Button Command="{Binding ExportCommand}" Style="{StaticResource ModernBtn}" Padding="22,12">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconLucide Kind="Download" Width="18" Height="18" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="تصدير المقايسة المحددة فقط" FontSize="14.5" FontWeight="Bold"/>
+                            </StackPanel>
+                        </Button>
+                    </WrapPanel>
                 </StackPanel>
             </Border>
 
@@ -74,6 +136,30 @@
                     </StackPanel>
 
                     <TextBlock Text="يمكنك الآن فتح الملفات الناتجة مباشرة في Excel أو فتح مجلد الحفظ:" FontSize="13.5" Foreground="{DynamicResource BrushTextSecondary}" Margin="0,0,0,14"/>
+
+                    <!-- Consolidated ZIP Archive Result (Visible when exported as ZIP) -->
+                    <Border Background="{DynamicResource BrushInputBg}" BorderBrush="{DynamicResource BrushSuccess}" BorderThickness="1.5" CornerRadius="8" Padding="14" Margin="0,0,0,14"
+                            Visibility="{Binding IsZipExported, Converter={StaticResource BoolToVis}}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <iconPacks:PackIconLucide Kind="Archive" Width="16" Height="16" Foreground="{DynamicResource BrushSuccess}" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="حزمة الأرشيف المضغوطة الشاملة (كافة مقايسات الاستشاري المسعرة + الداش بورد + تقرير التدقيق):" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource BrushSuccess}"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding LastExportedZipPath}" FontSize="13.5" FontWeight="SemiBold" Foreground="{DynamicResource BrushTextPrimary}" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                            <Button Grid.Column="1" Command="{Binding OpenZipFileCommand}" Style="{StaticResource SuccessBtn}" Padding="16,8" Margin="12,0,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <iconPacks:PackIconLucide Kind="Archive" Width="16" Height="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="فتح حزمة ZIP" FontWeight="Bold" FontSize="13"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                    </Border>
 
                     <Grid Margin="0,0,0,12">
                         <Grid.ColumnDefinitions>

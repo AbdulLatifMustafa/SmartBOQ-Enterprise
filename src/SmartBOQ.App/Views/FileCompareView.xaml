@@ -269,6 +269,16 @@
                             <TextBlock Text="بدء الدمج والتسعير والتصدير الفوري" FontWeight="Bold" FontSize="12.5"/>
                         </StackPanel>
                     </Button>
+
+                    <!-- Direct Merge All into ZIP Button (Visible when multiple targets) -->
+                    <Button Command="{Binding ExportAllZipCommand}" Style="{StaticResource ModernBtn}" Padding="15,7" Margin="0,2,8,2"
+                            Visibility="{Binding HasMultipleTargets, Converter={StaticResource BoolToVis}}" Background="#1E3A5F" BorderBrush="#38BDF8"
+                            ToolTip="تصدير كافة المقايسات الاستشارية المسعرة مع لوحة المؤشرات في حزمة مضغوطة واحدة">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconLucide Kind="Archive" Width="15" Height="15" Foreground="#38BDF8" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="دمج الكل في حزمة ZIP" FontWeight="Bold" FontSize="12.5" Foreground="#FFFFFF"/>
+                        </StackPanel>
+                    </Button>
                 </WrapPanel>
 
                 <!-- Right Status Message Indicator (Neutral Eye-Comfort Tag) -->

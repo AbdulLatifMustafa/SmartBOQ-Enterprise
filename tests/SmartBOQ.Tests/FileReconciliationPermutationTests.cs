@@ -257,4 +257,257 @@ public class FileReconciliationPermutationTests : IDisposable
         var wsConcrete = wbCheck.Worksheet("Bill 02 - Concrete Substructure");
         Assert.Equal(350.00, wsConcrete.Cell(2, 7).GetDouble(), 2);
     }
+
+    [Fact]
+    public async Task Permutation_RealClientFiles_CandyAndGolfCourse_MatchesSuccessfully()
+    {
+        string candyPath = @"C:\Users\BodyBoy\Desktop\BOQs\CANDY FILE.xlsx";
+        string golfPath = @"C:\Users\BodyBoy\Desktop\BOQs\BOQs\02_B_1  Golf Course Combined Phase 1 Phase 2_Rev_02.xlsx";
+
+        if (!File.Exists(candyPath) || !File.Exists(golfPath))
+        {
+            return; // Skip if run in environment where desktop files are absent
+        }
+
+        var readerFlat = new UniversalAdaptiveBoqReader();
+        var readerHier = new HierarchicalBoqReader();
+
+        var candyItems = await readerFlat.ReadContractorFlatBoqAsync(candyPath);
+        Assert.NotEmpty(candyItems);
+        // Verify candy items have real descriptions, not "PART B"
+        Assert.Contains(candyItems, i => i.Description.Contains("SURVEY", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(candyItems, i => i.UnitRate > 0);
+
+        var golfSheets = await readerHier.ReadConsultantHierarchicalBoqAsync(golfPath);
+        Assert.NotEmpty(golfSheets);
+        var golfItems = golfSheets.SelectMany(s => s.Items).ToList();
+        // Verify Employer was NOT added as an item
+        Assert.DoesNotContain(golfItems, i => i.ItemCode.Equals("Employer", StringComparison.OrdinalIgnoreCase));
+
+        var service = CreateReconciliationService("client_test.db");
+        var result = await service.ReconcileMultiSourceAsync(
+            new[] { candyPath },
+            golfPath,
+            0.75,
+            sheetMappings: null,
+            columnMappings: null);
+
+        var matchedCount = result.MatchedPairs.Count(p => p.InjectedRate > 0);
+        Assert.True(matchedCount >= 15, $"Expected at least 15 matched items, but got {matchedCount}");
+    }
+
+    [Fact]
+    public async Task Permutation_BatchMultiTarget_ReconcilesMultipleFilesSuccessfully()
+    {
+        string candyPath = @"C:\Users\BodyBoy\Desktop\BOQs\CANDY FILE.xlsx";
+        string golfPath = @"C:\Users\BodyBoy\Desktop\BOQs\BOQs\02_B_1  Golf Course Combined Phase 1 Phase 2_Rev_02.xlsx";
+        string landscapePath = @"C:\Users\BodyBoy\Desktop\BOQs\BOQs\04_D_1  Landscape Phase 1_Rev_02.xlsx";
+
+        if (!File.Exists(candyPath) || !File.Exists(golfPath) || !File.Exists(landscapePath))
+        {
+            return;
+        }
+
+        var service = CreateReconciliationService("batch_test.db");
+        string batchOutDir = Path.Combine(_tempDir, "BatchOut");
+
+        var results = await service.ReconcileBatchMultiTargetAsync(
+            new[] { candyPath },
+            new[] { golfPath, landscapePath },
+            batchOutDir,
+            sensitivity: 0.75);
+
+        Assert.Equal(2, results.Count);
+        foreach (var r in results)
+        {
+            Assert.True(File.Exists(r.OutputFilePath));
+            Assert.True(r.TotalItems > 0);
+        }
+    }
+
+    [Fact]
+    public async Task Permutation_MultiSource_CandyElectricalMechanical_MatchesLandscapeAccurately()
+    {
+        string candyPath = @"C:\Users\BodyBoy\Desktop\BOQs\CANDY FILE.xlsx";
+        string elecPath = @"C:\Users\BodyBoy\Desktop\BOQs\Electrical.xlsx";
+        string mechPath = @"C:\Users\BodyBoy\Desktop\BOQs\Mechanical.xlsx";
+        string landscapePath = @"C:\Users\BodyBoy\Desktop\BOQs\BOQs\04_D_1  Landscape Phase 1_Rev_02.xlsx";
+
+        if (!File.Exists(candyPath) || !File.Exists(elecPath) || !File.Exists(mechPath) || !File.Exists(landscapePath))
+        {
+            return;
+        }
+
+        var service = CreateReconciliationService("multi_source_test.db");
+        var result = await service.ReconcileMultiSourceAsync(
+            new[] { candyPath, elecPath, mechPath },
+            landscapePath,
+            sensitivity: 0.75);
+
+        Assert.NotNull(result);
+        Assert.NotEmpty(result.SourceItems);
+
+        var mechSourceItems = result.SourceItems.Where(i => i.SheetName.Equals("Estimation Sheet", StringComparison.OrdinalIgnoreCase)).ToList();
+        Assert.NotEmpty(mechSourceItems);
+
+        var matchedWithRate = result.MatchedPairs.Where(p => p.InjectedRate > 0).ToList();
+        var fromCandy = matchedWithRate.Count(p => p.MatchedSourceItem?.SheetName?.Equals("Estimate", StringComparison.OrdinalIgnoreCase) == true);
+        var fromElec = matchedWithRate.Count(p => p.MatchedSourceItem?.SheetName?.Equals("Sheet1", StringComparison.OrdinalIgnoreCase) == true);
+        var fromMech = matchedWithRate.Count(p => p.MatchedSourceItem?.SheetName?.Contains("Estimation", StringComparison.OrdinalIgnoreCase) == true);
+
+        Assert.True(matchedWithRate.Count >= 50, $"Expected >= 50 matched items, but got {matchedWithRate.Count}");
+        Assert.True(fromCandy > 0, "Expected rates from CANDY");
+        Assert.True(fromElec > 0, "Expected rates from Electrical");
+        Assert.True(fromMech > 0, "Expected rates from Mechanical");
+    }
+
+    [Fact]
+    public async Task Permutation_GrandMainSummary_SingleSheetWorkbook_IsParsedSuccessfully()
+    {
+        string grandSummaryPath = @"C:\Users\BodyBoy\Desktop\BOQs\BOQs\00_A_0  Grand Main Summary _55018602_Rev_02.xlsx";
+        if (!File.Exists(grandSummaryPath)) return;
+
+        var reader = new HierarchicalBoqReader();
+        var sheets = await reader.ReadConsultantHierarchicalBoqAsync(grandSummaryPath);
+        Assert.NotEmpty(sheets);
+        Assert.Single(sheets);
+        Assert.NotEmpty(sheets[0].Items);
+    }
+
+    [Fact]
+    public async Task Permutation_All11ConsultantTargets_Diagnostic()
+    {
+        string candyPath = @"C:\Users\BodyBoy\Desktop\BOQs\CANDY FILE.xlsx";
+        string elecPath = @"C:\Users\BodyBoy\Desktop\BOQs\Electrical.xlsx";
+        string mechPath = @"C:\Users\BodyBoy\Desktop\BOQs\Mechanical.xlsx";
+        string targetDir = @"C:\Users\BodyBoy\Desktop\BOQs\BOQs";
+
+        if (!File.Exists(candyPath) || !Directory.Exists(targetDir)) return;
+
+        var targetFiles = Directory.GetFiles(targetDir, "*.xlsx").OrderBy(f => f).ToList();
+        var sources = new List<string> { candyPath, elecPath, mechPath }.Where(File.Exists).ToList();
+
+        var inspector = new BoqInspectorService();
+        var colMapping = await inspector.DetectColumnMappingAsync(candyPath, targetFiles.First(f => f.Contains("02_B_1")));
+        var service = CreateReconciliationService("all11_test.db");
+
+        int totalPricedAll = 0;
+        int totalTargetItemsAll = 0;
+
+        var sbBreakdown = new System.Text.StringBuilder();
+        foreach (var tFile in targetFiles)
+        {
+            var result = await service.ReconcileMultiSourceAsync(
+                sources,
+                tFile,
+                sensitivity: 0.75,
+                sheetMappings: null,
+                columnMappings: colMapping);
+
+            int priced = result.MatchedPairs.Count(p => p.InjectedRate.HasValue && p.InjectedRate > 0 && !p.IsProvisionalSum);
+            totalPricedAll += priced;
+            totalTargetItemsAll += result.MatchedPairs.Count;
+
+            sbBreakdown.AppendLine($"{Path.GetFileName(tFile)}: {priced}/{result.MatchedPairs.Count} priced");
+        }
+
+        Assert.True(totalPricedAll >= 350, $"Expected >= 350 priced items across all 11 files, but got {totalPricedAll}/{totalTargetItemsAll}.\nBreakdown:\n{sbBreakdown}");
+    }
+
+    [Fact]
+    public async Task Permutation_MultiTarget_ConsolidatedZipExport_VerifiesArchiveStructure()
+    {
+        using var zipTestDir = new DisposableTempDir();
+        string srcFile = Path.Combine(zipTestDir.Path, "Contractor_Priced.xlsx");
+        string tgtFile1 = Path.Combine(zipTestDir.Path, "01_Arch.xlsx");
+        string tgtFile2 = Path.Combine(zipTestDir.Path, "02_Civil.xlsx");
+        string zipOut = Path.Combine(zipTestDir.Path, "Consolidated_Reconciliation.zip");
+
+        // Create Source
+        using (var wbS = new XLWorkbook())
+        {
+            var ws = wbS.Worksheets.Add("Priced Bill");
+            ws.Cell(1, 1).Value = "Item Code"; ws.Cell(1, 2).Value = "Description"; ws.Cell(1, 3).Value = "Quantity"; ws.Cell(1, 4).Value = "Unit"; ws.Cell(1, 5).Value = "Unit Rate"; ws.Cell(1, 6).Value = "Total Amount";
+            ws.Cell(2, 1).Value = "A1"; ws.Cell(2, 2).Value = "Excavation in sand"; ws.Cell(2, 3).Value = 100; ws.Cell(2, 4).Value = "m3"; ws.Cell(2, 5).Value = 150.0; ws.Cell(2, 6).Value = 15000;
+            ws.Cell(3, 1).Value = "B1"; ws.Cell(3, 2).Value = "Ceramic tile flooring"; ws.Cell(3, 3).Value = 50; ws.Cell(3, 4).Value = "m2"; ws.Cell(3, 5).Value = 280.0; ws.Cell(3, 6).Value = 14000;
+            wbS.SaveAs(srcFile);
+        }
+
+        // Create Target 1 (Civil)
+        using (var wbT1 = new XLWorkbook())
+        {
+            var ws = wbT1.Worksheets.Add("Civil Schedule");
+            ws.Cell(1, 1).Value = "Item"; ws.Cell(1, 3).Value = "Description"; ws.Cell(1, 5).Value = "Quantity"; ws.Cell(1, 6).Value = "Unit"; ws.Cell(1, 7).Value = "Rate"; ws.Cell(1, 8).Value = "Total";
+            ws.Cell(2, 1).Value = "A1"; ws.Cell(2, 3).Value = "Excavation in sand"; ws.Cell(2, 5).Value = 100; ws.Cell(2, 6).Value = "m3"; ws.Cell(2, 8).FormulaA1 = "E2*G2";
+            wbT1.SaveAs(tgtFile1);
+        }
+
+        // Create Target 2 (Arch)
+        using (var wbT2 = new XLWorkbook())
+        {
+            var ws = wbT2.Worksheets.Add("Arch Schedule");
+            ws.Cell(1, 1).Value = "Item"; ws.Cell(1, 3).Value = "Description"; ws.Cell(1, 5).Value = "Quantity"; ws.Cell(1, 6).Value = "Unit"; ws.Cell(1, 7).Value = "Rate"; ws.Cell(1, 8).Value = "Total";
+            ws.Cell(2, 1).Value = "B1"; ws.Cell(2, 3).Value = "Ceramic tile flooring"; ws.Cell(2, 5).Value = 50; ws.Cell(2, 6).Value = "m2"; ws.Cell(2, 8).FormulaA1 = "E2*G2";
+            wbT2.SaveAs(tgtFile2);
+        }
+
+        var service = CreateReconciliationService("zip_test.db");
+        string stagingDir = Path.Combine(zipTestDir.Path, "staging");
+        Directory.CreateDirectory(stagingDir);
+
+        // Process both targets into staging
+        var targets = new[] { tgtFile1, tgtFile2 };
+        foreach (var tPath in targets)
+        {
+            var res = await service.ReconcileAsync(srcFile, tPath, sensitivity: 0.75);
+            string outExcel = Path.Combine(stagingDir, $"Reconciled_{Path.GetFileName(tPath)}");
+            await service.ExportPricedScheduleAsync(tPath, outExcel, res.MatchedPairs, progress: null, ct: CancellationToken.None);
+            Assert.True(File.Exists(outExcel));
+        }
+
+        // Copy source priced file alongside output files for direct side-by-side comparison
+        File.Copy(srcFile, Path.Combine(stagingDir, $"[Source_Priced]_{Path.GetFileName(srcFile)}"), overwrite: true);
+
+        // Add summary audit txt and dashboard
+        File.WriteAllText(Path.Combine(stagingDir, "Reconciliation_Audit_Summary.txt"), "Audit complete: 2 packages processed.");
+        using (var wbDash = new XLWorkbook())
+        {
+            wbDash.Worksheets.Add("Master KPI");
+            wbDash.SaveAs(Path.Combine(stagingDir, "DP3_Executive_Commercial_Dashboard.xlsx"));
+        }
+
+        // Compress
+        System.IO.Compression.ZipFile.CreateFromDirectory(stagingDir, zipOut, System.IO.Compression.CompressionLevel.Optimal, false);
+        Assert.True(File.Exists(zipOut));
+
+        // Verify ZIP contents (including [Source_Priced] file!)
+        using var zipArchive = System.IO.Compression.ZipFile.OpenRead(zipOut);
+        Assert.Equal(5, zipArchive.Entries.Count);
+        Assert.Contains(zipArchive.Entries, e => e.Name == "Reconciled_01_Arch.xlsx");
+        Assert.Contains(zipArchive.Entries, e => e.Name == "Reconciled_02_Civil.xlsx");
+        Assert.Contains(zipArchive.Entries, e => e.Name == "[Source_Priced]_Contractor_Priced.xlsx");
+        Assert.Contains(zipArchive.Entries, e => e.Name == "DP3_Executive_Commercial_Dashboard.xlsx");
+        Assert.Contains(zipArchive.Entries, e => e.Name == "Reconciliation_Audit_Summary.txt");
+
+        // Verify uncorrupted Excel inside ZIP
+        var archEntry = zipArchive.GetEntry("Reconciled_01_Arch.xlsx");
+        Assert.NotNull(archEntry);
+        using var entryStream = archEntry.Open();
+        using var wbUnzipped = new XLWorkbook(entryStream);
+        var unzippedWs = wbUnzipped.Worksheet(1);
+        var cellRate = unzippedWs.Cell(2, 7);
+        Assert.True(cellRate.DataType == XLDataType.Number, $"Expected Number but was {cellRate.DataType}, Value='{cellRate.Value}'");
+        Assert.Equal(150.0, cellRate.GetDouble(), 2);
+    }
+
+    private sealed class DisposableTempDir : IDisposable
+    {
+        public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "SmartBOQ_ZipTest_" + Guid.NewGuid().ToString("N"));
+        public DisposableTempDir() => Directory.CreateDirectory(Path);
+        public void Dispose()
+        {
+            try { if (Directory.Exists(Path)) Directory.Delete(Path, true); } catch { }
+        }
+    }
 }
+

@@ -34,8 +34,8 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
 
                 string sheetName = reader.Name?.Trim() ?? string.Empty;
 
-                // Skip non-bill summary/preamble sheets
-                if (IsNonBillSheet(sheetName))
+                // Skip non-bill summary/preamble sheets (unless it is the only sheet in the workbook)
+                if (reader.ResultsCount > 1 && IsNonBillSheet(sheetName))
                 {
                     continue;
                 }
@@ -48,12 +48,14 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
                 var items = new List<BoqItem>(150);
                 string currentSection = string.Empty;
                 string currentItemCode = string.Empty;
+                string currentSerialNumber = string.Empty;
                 var descBuilder = new StringBuilder(512);
                 int startRowIndex = 0;
                 string detectedCurrency = "EGP";
 
                 // Dynamic Header Column Mapping (defaults to standard Consultant format)
-                int colItem = 0;
+                int colSn = -1;
+                int colItem = -1;
                 int colDesc = 2;
                 int colQty = 4;
                 int colUnit = 5;
@@ -66,49 +68,109 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
                 {
                     rowIndex++;
 
-                    // Scan for dynamic column headers in the first 25 rows
-                    if (!headerFound && rowIndex <= 25)
+                    // Scan for dynamic column headers in the first 30 rows
+                    if (!headerFound)
                     {
-                        int tItem = -1, tDesc = -1, tQty = -1, tUnit = -1, tRate = -1, tAmt = -1;
-                        for (int c = 0; c < reader.FieldCount; c++)
+                        if (rowIndex <= 30)
                         {
-                            string cellVal = reader.GetValue(c)?.ToString()?.Trim() ?? string.Empty;
-                            if (cellVal.Equals("USD", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("(USD)", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("RATE (USD)", StringComparison.OrdinalIgnoreCase)) detectedCurrency = "USD";
-                            else if (cellVal.Equals("EUR", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("(EUR)", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("€")) detectedCurrency = "EUR";
+                            int tSn = -1, tItem = -1, tDesc = -1, tQty = -1, tUnit = -1, tRate = -1, tAmt = -1;
+                            for (int c = 0; c < reader.FieldCount; c++)
+                            {
+                                string cellVal = reader.GetValue(c)?.ToString()?.Trim() ?? string.Empty;
+                                if (cellVal.Equals("USD", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("(USD)", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("RATE (USD)", StringComparison.OrdinalIgnoreCase)) detectedCurrency = "USD";
+                                else if (cellVal.Equals("EUR", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("(EUR)", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("€")) detectedCurrency = "EUR";
 
-                            if (cellVal.Equals("ITEM", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("ITEM NO.", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("ITEM NO", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("رقم", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("كود", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("م", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("بند", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("مسلسل", StringComparison.OrdinalIgnoreCase)) tItem = c;
-                            else if (cellVal.Contains("DESCRIPTION", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("PARTICULAR", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("الوصف", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("البيان", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("تفاصيل", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("المواصفات", StringComparison.OrdinalIgnoreCase)) tDesc = c;
-                            else if (cellVal.StartsWith("QTY", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("QUANTITY", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("الكمية", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("الكميات", StringComparison.OrdinalIgnoreCase)) tQty = c;
-                            else if (cellVal.Equals("UNIT", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("UOM", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("الوحدة", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("وحدة", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("وحدة القياس", StringComparison.OrdinalIgnoreCase)) tUnit = c;
-                            else if (cellVal.StartsWith("RATE", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("PRICE", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("السعر", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("الفئة", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("سعر", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("فئة", StringComparison.OrdinalIgnoreCase)) tRate = c;
-                            else if (cellVal.StartsWith("AMOUNT", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("TOTAL", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("الإجمالي", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("القيمة", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("المبلغ", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("جملة", StringComparison.OrdinalIgnoreCase)) tAmt = c;
+                                if (cellVal.Equals("SN", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("S/N", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("S.N.", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("S.N", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("S.NO", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("S.NO.", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("مسلسل", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("م", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tSn = c;
+                                }
+                                else if (cellVal.Equals("ITEM", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("ITEM NO.", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("ITEM NO", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("ITEM CODE", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("رقم", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("كود", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("بند", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tItem = c;
+                                }
+                                else if (cellVal.Contains("DESCRIPTION", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("PARTICULAR", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("الوصف", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("البيان", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("تفاصيل", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("المواصفات", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tDesc = c;
+                                }
+                                else if (cellVal.StartsWith("QTY", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("QUANTITY", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("الكمية", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("الكميات", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tQty = c;
+                                }
+                                else if (cellVal.Equals("UNIT", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("UOM", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("الوحدة", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("وحدة", StringComparison.OrdinalIgnoreCase) || cellVal.Equals("وحدة القياس", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tUnit = c;
+                                }
+                                else if (cellVal.StartsWith("RATE", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("PRICE", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("السعر", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("الفئة", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("سعر", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("فئة", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tRate = c;
+                                }
+                                else if (cellVal.StartsWith("AMOUNT", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("TOTAL", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("الإجمالي", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("القيمة", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("المبلغ", StringComparison.OrdinalIgnoreCase) || cellVal.StartsWith("جملة", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    tAmt = c;
+                                }
+                            }
+
+                            if (tUnit >= 0 && (tQty >= 0 || tDesc >= 0))
+                            {
+                                if (tItem >= 0) colItem = tItem;
+                                if (tSn >= 0) colSn = tSn;
+                                if (colItem == -1 && colSn >= 0) colItem = colSn;
+                                if (colSn == -1 && colItem > 0) colSn = 0;
+                                if (colItem == -1 && colSn == -1) colItem = 0;
+                                if (tDesc >= 0) colDesc = tDesc;
+                                if (tUnit >= 0) colUnit = tUnit;
+                                if (tQty >= 0) colQty = tQty;
+                                if (tRate >= 0) colRate = tRate;
+                                if (tAmt >= 0) colAmt = tAmt;
+                                headerFound = true;
+                                continue; // Skip header row
+                            }
+
+                            // Strict Pre-Header Shield: Never parse document cover / title rows before header is found!
+                            continue;
                         }
-
-                        if (tUnit >= 0 && (tQty >= 0 || tDesc >= 0))
+                        else
                         {
-                            if (tItem >= 0) colItem = tItem;
-                            if (tDesc >= 0) colDesc = tDesc;
-                            if (tUnit >= 0) colUnit = tUnit;
-                            if (tQty >= 0) colQty = tQty;
-                            if (tRate >= 0) colRate = tRate;
-                            if (tAmt >= 0) colAmt = tAmt;
-                            headerFound = true;
-                            continue; // Skip header row
+                            // If after 30 rows no valid header was found, skip this non-bill sheet
+                            break;
                         }
                     }
 
                     // Safe cell access via dynamic column mapping
-                    string colCode = GetSafeString(reader, colItem);
-                    string colText = GetSafeString(reader, colDesc);
+                    string colSnVal = colSn >= 0 ? GetSafeString(reader, colSn) : string.Empty;
+                    string colCode = colItem >= 0 ? GetSafeString(reader, colItem) : string.Empty;
+                    string colText = colDesc >= 0 ? GetSafeString(reader, colDesc) : string.Empty;
                     string colUnitRaw = colUnit >= 0 ? GetSafeString(reader, colUnit) : string.Empty;
                     string normUnit = NormalizeUnit(colUnitRaw);
                     object? colQtyObj = colQty >= 0 ? GetSafeValue(reader, colQty) : null;
                     decimal qty = ParseDecimal(colQtyObj);
                     object? colRateObj = colRate >= 0 ? GetSafeValue(reader, colRate) : null;
+                    object? colAmtObj = colAmt >= 0 ? GetSafeValue(reader, colAmt) : null;
                     string colAmtStr = colAmt >= 0 ? GetSafeString(reader, colAmt) : string.Empty;
+
+                    // Filter out metadata and subtotal summary rows
+                    if (IsMetadataRow(colCode, colText) ||
+                        colText.StartsWith("Summary of", StringComparison.OrdinalIgnoreCase) ||
+                        colText.StartsWith("Total of", StringComparison.OrdinalIgnoreCase) ||
+                        colText.StartsWith("إجمالي ", StringComparison.OrdinalIgnoreCase) ||
+                        colText.StartsWith("Grand Total", StringComparison.OrdinalIgnoreCase) ||
+                        colText.Equals("VAT", StringComparison.OrdinalIgnoreCase) ||
+                        colText.StartsWith("VAT ", StringComparison.OrdinalIgnoreCase) ||
+                        colText.Contains("Excluding VAT", StringComparison.OrdinalIgnoreCase) ||
+                        colText.Contains("Including VAT", StringComparison.OrdinalIgnoreCase) ||
+                        colText.Contains("ضريبة", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
 
                     bool isRateOnly = colAmtStr.Contains("Rate only", StringComparison.OrdinalIgnoreCase) ||
                                       colUnitRaw.Contains("Rate only", StringComparison.OrdinalIgnoreCase);
+
+                    // Track serial number
+                    if (!string.IsNullOrWhiteSpace(colSnVal) && !colSnVal.Equals("SN", StringComparison.OrdinalIgnoreCase) && !colSnVal.Equals("م", StringComparison.OrdinalIgnoreCase) && colSnVal.Length <= 10)
+                    {
+                        currentSerialNumber = colSnVal;
+                    }
 
                     // Section Detection: Only when no item code, no unit, and no qty
                     if (string.IsNullOrWhiteSpace(colCode) && qty == 0m && string.IsNullOrWhiteSpace(normUnit))
@@ -117,6 +179,7 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
                             colText.StartsWith("BILL NO", StringComparison.OrdinalIgnoreCase) ||
                             colText.StartsWith("PART ", StringComparison.OrdinalIgnoreCase) ||
                             colText.StartsWith("CLASS ", StringComparison.OrdinalIgnoreCase) ||
+                            colText.StartsWith("DIVISION", StringComparison.OrdinalIgnoreCase) ||
                             colText.StartsWith("قسم", StringComparison.OrdinalIgnoreCase) ||
                             colText.StartsWith("باب", StringComparison.OrdinalIgnoreCase) ||
                             colText.StartsWith("بند رئيسي", StringComparison.OrdinalIgnoreCase) ||
@@ -128,12 +191,16 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
                         }
                     }
 
-                    // Item Code boundary detected in Col A
-                    if (!string.IsNullOrWhiteSpace(colCode) && colCode.Length <= 8 && !colCode.Equals("ITEM", StringComparison.OrdinalIgnoreCase) && !colCode.Equals("م", StringComparison.OrdinalIgnoreCase) && !colCode.Equals("بند", StringComparison.OrdinalIgnoreCase))
+                    // Item Code boundary detected in Col B / Col A
+                    if (!string.IsNullOrWhiteSpace(colCode) && colCode.Length <= 12 && !colCode.Equals("ITEM", StringComparison.OrdinalIgnoreCase) && !colCode.Equals("م", StringComparison.OrdinalIgnoreCase) && !colCode.Equals("بند", StringComparison.OrdinalIgnoreCase))
                     {
                         currentItemCode = colCode;
                         descBuilder.Clear();
                         startRowIndex = rowIndex;
+                    }
+                    else if (string.IsNullOrWhiteSpace(currentItemCode) && !string.IsNullOrWhiteSpace(currentSerialNumber))
+                    {
+                        currentItemCode = currentSerialNumber;
                     }
 
                     // Append description segment
@@ -148,21 +215,53 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
                     // 1. Has valid numeric Quantity AND valid Unit (standard item)
                     // 2. Has valid Unit AND non-empty ItemCode (Rate-Only civil items like probing/grouting in Infra)
                     // 3. Explicit Rate-Only note
+                    // 4. Has Quantity AND non-empty ItemCode/SerialNumber (e.g. Lump Sum items)
                     bool hasValidUnit = !string.IsNullOrWhiteSpace(normUnit) && !normUnit.Equals("unit", StringComparison.OrdinalIgnoreCase) && !normUnit.Equals("الوحدة", StringComparison.OrdinalIgnoreCase);
                     bool isAnchorRow = (qty > 0m && hasValidUnit) || 
                                        (hasValidUnit && !string.IsNullOrWhiteSpace(currentItemCode)) ||
-                                       (hasValidUnit && isRateOnly);
+                                       (hasValidUnit && isRateOnly) ||
+                                       (qty > 0m && (!string.IsNullOrWhiteSpace(currentItemCode) || !string.IsNullOrWhiteSpace(currentSerialNumber)));
 
                     if (isAnchorRow)
                     {
                         decimal? rate = null;
                         decimal parsedRate = ParseDecimal(colRateObj);
-                        if (parsedRate > 0m) rate = parsedRate;
+                        decimal parsedAmt = ParseDecimal(colAmtObj);
 
+                        bool isIgnoredScope = (colRateObj?.ToString()?.Contains("Ignored", StringComparison.OrdinalIgnoreCase) ?? false) ||
+                                              colAmtStr.Contains("Ignored", StringComparison.OrdinalIgnoreCase) ||
+                                              (colQtyObj?.ToString()?.Contains("Ignored", StringComparison.OrdinalIgnoreCase) ?? false);
+
+                        if (parsedRate > 0m)
+                        {
+                            rate = parsedRate;
+                        }
+                        else if (colRateObj != null && !string.IsNullOrWhiteSpace(colRateObj.ToString()) && 
+                                 (colRateObj is double || colRateObj is decimal || colRateObj is int || colRateObj is long || 
+                                  colRateObj.ToString()!.Trim() == "0" || colRateObj.ToString()!.Trim() == "0.0" || colRateObj.ToString()!.Trim() == "0.00"))
+                        {
+                            rate = 0m;
+                        }
+                        else if (parsedAmt > 0m && qty > 0m)
+                        {
+                            rate = parsedAmt / qty;
+                        }
+                        else if (colAmtObj != null && !string.IsNullOrWhiteSpace(colAmtStr) && 
+                                 (colAmtObj is double || colAmtObj is decimal || colAmtObj is int || colAmtObj is long || 
+                                  colAmtStr == "0" || colAmtStr == "0.0" || colAmtStr == "0.00"))
+                        {
+                            rate = 0m;
+                        }
+                        else if (isIgnoredScope)
+                        {
+                            rate = 0m;
+                        }
+
+                        string lineItemText = CompactStringPool.Shared.GetOrAdd(colText.Trim());
                         string fullDescription = CompactStringPool.Shared.GetOrAdd(descBuilder.ToString().Trim());
                         if (string.IsNullOrWhiteSpace(fullDescription))
                         {
-                            fullDescription = colText;
+                            fullDescription = lineItemText;
                         }
 
                         bool isItemPs = isPurePsSchedule ||
@@ -172,24 +271,31 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
 
                         var itemType = isItemPs 
                             ? BoqItemType.ProvisionalSum 
-                            : (isRateOnly || qty == 0m ? BoqItemType.RateOnly : BoqItemType.Normal);
+                            : (isRateOnly || (qty == 0m && !isIgnoredScope) ? BoqItemType.RateOnly : BoqItemType.Normal);
+
+                        string finalSerialNumber = !string.IsNullOrWhiteSpace(currentSerialNumber) ? currentSerialNumber : currentItemCode;
 
                         var item = new BoqItem
                         {
                             Id = $"B_{sheetName}_{rowIndex}_{currentItemCode}",
                             BillNumber = sheetName,
                             SectionName = currentSection,
+                            HierarchyPath = $"{Path.GetFileNameWithoutExtension(filePath)} / {sheetName}",
                             ItemCode = currentItemCode,
+                            SerialNumber = finalSerialNumber,
+                            LineItemText = lineItemText,
                             Description = fullDescription,
                             NormalizedDescription = NormalizeDescription(fullDescription),
                             Unit = normUnit,
                             Quantity = qty,
                             UnitRate = rate,
-                            TotalAmount = rate.HasValue ? rate.Value * qty : null,
+                            OriginalRate = rate ?? (isIgnoredScope ? 0m : null),
+                            TotalAmount = rate.HasValue ? rate.Value * qty : (parsedAmt > 0m ? parsedAmt : (colAmtObj != null ? 0m : null)),
                             NumberOff = 1,
                             Currency = detectedCurrency,
                             Type = itemType,
                             SheetName = sheetName,
+                            WorkbookName = Path.GetFileName(filePath),
                             StartRowIndex = startRowIndex > 0 ? startRowIndex : rowIndex,
                             AnchorRowIndex = rowIndex,
                             RateColumnIndex = colRate >= 0 ? colRate + 1 : 7,
@@ -204,6 +310,7 @@ public sealed class HierarchicalBoqReader : BaseBoqReader
                         // Reset pending item state
                         descBuilder.Clear();
                         currentItemCode = string.Empty;
+                        currentSerialNumber = string.Empty;
                         startRowIndex = 0;
                     }
                 }

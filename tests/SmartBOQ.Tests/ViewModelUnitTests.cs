@@ -268,4 +268,43 @@ public class ViewModelAndResilienceUnitTests
         Assert.Equal(50.0, vm.MatchAccuracyRate); // (1 + 1) / 4 * 100 = 50.0%
         Assert.Single(vm.CurrencySummaries);
     }
+
+    [Fact]
+    public void MultiTarget_FilteringByTargetWorkbook_FiltersCorrectly()
+    {
+        // Arrange
+        var mock = new MockCoordinator();
+        var mainVm = new MainViewModel();
+
+        var itemPkg1 = new BoqItem { Id = "T1", BillNumber = "B1", Description = "Pipe 100mm", Unit = "m", Quantity = 50m, WorkbookName = "Pkg_01.xlsx" };
+        var itemPkg2 = new BoqItem { Id = "T2", BillNumber = "B1", Description = "Cable 4x16", Unit = "m", Quantity = 100m, WorkbookName = "Pkg_02.xlsx" };
+
+        var pair1 = new BoqMatchedPair { TargetItem = itemPkg1, InjectedRate = 120m, Confidence = MatchConfidence.Exact };
+        var pair2 = new BoqMatchedPair { TargetItem = itemPkg2, InjectedRate = 45m, Confidence = MatchConfidence.Exact };
+
+        mainVm.TargetFilterOptions.Add("All Target BOQs (2 items)");
+        mainVm.TargetFilterOptions.Add("Pkg_01.xlsx");
+        mainVm.TargetFilterOptions.Add("Pkg_02.xlsx");
+
+        // Simulate multi-target reconcile population
+        var allPairsField = typeof(MainViewModel).GetField("_allReconciledPairs", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var allPairs = (List<BoqMatchedPair>)allPairsField!.GetValue(mainVm)!;
+        allPairs.Add(pair1);
+        allPairs.Add(pair2);
+
+        // Act 1: Select All
+        mainVm.SelectedTargetFilter = "All Target BOQs (2 items)";
+        Assert.Equal(2, mainVm.MatchedPairs.Count);
+        Assert.True(mainVm.HasMultipleTargets);
+
+        // Act 2: Select Pkg_01.xlsx
+        mainVm.SelectedTargetFilter = "Pkg_01.xlsx";
+        Assert.Single(mainVm.MatchedPairs);
+        Assert.Equal("Pkg_01.xlsx", mainVm.MatchedPairs[0].TargetItem.WorkbookName);
+
+        // Act 3: Select Pkg_02.xlsx
+        mainVm.SelectedTargetFilter = "Pkg_02.xlsx";
+        Assert.Single(mainVm.MatchedPairs);
+        Assert.Equal("Pkg_02.xlsx", mainVm.MatchedPairs[0].TargetItem.WorkbookName);
+    }
 }

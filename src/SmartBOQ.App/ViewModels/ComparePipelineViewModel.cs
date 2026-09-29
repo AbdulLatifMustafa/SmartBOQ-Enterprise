@@ -107,6 +107,8 @@ public sealed class ComparePipelineViewModel : ChildViewModelBase
     public AsyncRelayCommand AddNewFileCommand { get; }
     public RelayCommand RemoveFileCommand { get; }
     public RelayCommand SetPrimaryTargetCommand { get; }
+    public RelayCommand SetPrimaryContractorCommand { get; }
+    public RelayCommand SetPrimaryConsultantCommand { get; }
     public AsyncRelayCommand AutoLinkSheetsCommand { get; }
     public RelayCommand AddSheetMappingCommand { get; }
     public RelayCommand RemoveSheetMappingCommand { get; }
@@ -127,6 +129,8 @@ public sealed class ComparePipelineViewModel : ChildViewModelBase
         AddNewFileCommand = new AsyncRelayCommand(AddNewFileAsync);
         RemoveFileCommand = new RelayCommand(p => RemoveFile(p as BoqFileInfo));
         SetPrimaryTargetCommand = new RelayCommand(p => SetPrimaryTarget(p as BoqFileInfo));
+        SetPrimaryContractorCommand = new RelayCommand(p => SetPrimarySource(p as BoqFileInfo));
+        SetPrimaryConsultantCommand = new RelayCommand(p => SetPrimaryTarget(p as BoqFileInfo));
         AutoLinkSheetsCommand = new AsyncRelayCommand(AutoLinkSheetsAsync);
         AddSheetMappingCommand = new RelayCommand(_ => AddSheetMapping());
         RemoveSheetMappingCommand = new RelayCommand(p => RemoveSheetMapping(p as SheetLinkMappingViewModel));
@@ -177,8 +181,32 @@ public sealed class ComparePipelineViewModel : ChildViewModelBase
         await ExecuteAsync(async () =>
         {
             SetStatus($"جارٍ الفحص التكيفي للملف: {Path.GetFileName(filePath)}...");
-            BoqFileRole role = preferredRole ?? (IngestedFiles.Count == 0 ? BoqFileRole.ContractorPriced : BoqFileRole.ConsultantTarget);
-            var info = await Inspector.InspectWorkbookAsync(filePath, role);
+            var info = await Inspector.InspectWorkbookAsync(filePath, preferredRole);
+
+            // Dynamically assign role based on content pricing & metadata when no explicit preference is set
+            if (preferredRole == null)
+            {
+                if (!info.HasPricedRates)
+                {
+                    info.Role = BoqFileRole.ConsultantTarget;
+                }
+                else
+                {
+                    bool hasContractor = IngestedFiles.Any(f => f.Role == BoqFileRole.ContractorPriced);
+                    if (info.DetectedRole == BoqFileRole.ConsultantTarget)
+                    {
+                        info.Role = BoqFileRole.ConsultantTarget;
+                    }
+                    else if (!hasContractor)
+                    {
+                        info.Role = BoqFileRole.ContractorPriced;
+                    }
+                    else
+                    {
+                        info.Role = BoqFileRole.SupplementaryRates;
+                    }
+                }
+            }
 
             IngestedFiles.Add(info);
             SelectedFileForDetails = info;
@@ -213,10 +241,20 @@ public sealed class ComparePipelineViewModel : ChildViewModelBase
     public void SetPrimaryTarget(BoqFileInfo? file)
     {
         if (file == null) return;
-        foreach (var f in IngestedFiles)
+        file.Role = BoqFileRole.ConsultantTarget;
+
+        _ = AutoLinkSheetsAsync();
+        BuildAlgorithmicPlan();
+    }
+
+    public void SetPrimarySource(BoqFileInfo? file)
+    {
+        if (file == null) return;
+        foreach (var f in IngestedFiles.Where(x => x.Role == BoqFileRole.ContractorPriced && x != file))
         {
-            f.Role = f == file ? BoqFileRole.ConsultantTarget : BoqFileRole.ContractorPriced;
+            f.Role = BoqFileRole.SupplementaryRates;
         }
+        file.Role = BoqFileRole.ContractorPriced;
 
         _ = AutoLinkSheetsAsync();
         BuildAlgorithmicPlan();

@@ -32,25 +32,120 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
         {
             var results = new BoqMatchedPair[targetItems.Count];
 
-            // 1. Pre-index source items by Normalized Bill Key
+            // 1. Pre-index priced source items by Normalized Bill Key and Hierarchy
             var sourcesByBill = new Dictionary<string, List<IndexedSourceItem>>(StringComparer.OrdinalIgnoreCase);
-            var allIndexedSources = new IndexedSourceItem[sourceItems.Count];
+            var pricedSources = new List<IndexedSourceItem>(sourceItems.Count);
+            int idxCounter = 0;
+
+            void IndexSourceKey(string key, IndexedSourceItem item)
+            {
+                if (string.IsNullOrWhiteSpace(key)) return;
+                string norm = NormalizeBillKey(key);
+                if (string.IsNullOrWhiteSpace(norm)) return;
+                if (!sourcesByBill.TryGetValue(norm, out var list))
+                {
+                    list = new List<IndexedSourceItem>(64);
+                    sourcesByBill[norm] = list;
+                }
+                list.Add(item);
+            }
 
             for (int sIdx = 0; sIdx < sourceItems.Count; sIdx++)
             {
                 var src = sourceItems[sIdx];
-                var tokenHashes = ExtractTokenHashes(src.NormalizedDescription);
-                var secHashes = ExtractTokenHashes(src.SectionName);
-                var indexed = new IndexedSourceItem(src, tokenHashes, secHashes, sIdx);
-                allIndexedSources[sIdx] = indexed;
-
-                string billKey = NormalizeBillKey(src.BillNumber);
-                if (!sourcesByBill.TryGetValue(billKey, out var list))
+                decimal? rate = src.UnitRate;
+                if ((!rate.HasValue || rate.Value <= 0) && src.TotalAmount.HasValue && src.TotalAmount.Value > 0 && src.Quantity > 0)
                 {
-                    list = new List<IndexedSourceItem>(64);
-                    sourcesByBill[billKey] = list;
+                    rate = src.TotalAmount.Value / src.Quantity;
+                    src = src with { UnitRate = rate };
                 }
-                list.Add(indexed);
+
+                bool isIgnoredScope = src.Description.Contains("Ignored", StringComparison.OrdinalIgnoreCase) ||
+                                      src.NormalizedDescription.Contains("ignored", StringComparison.OrdinalIgnoreCase);
+
+                if ((!rate.HasValue || rate.Value <= 0) && !isIgnoredScope)
+                {
+                    continue; // Exclude unpriced section headers and administrative rows from candidate pricing pool
+                }
+
+                if (isIgnoredScope && (!rate.HasValue || rate.Value <= 0))
+                {
+                    src = src with { UnitRate = 0m };
+                }
+
+                string srcNormDesc = !string.IsNullOrWhiteSpace(src.NormalizedDescription) ? src.NormalizedDescription : CleanNormalize(src.Description);
+                var tokenHashes = ExtractTokenHashes(srcNormDesc);
+                var secHashes = ExtractTokenHashes(src.SectionName);
+                string normLine = !string.IsNullOrWhiteSpace(src.LineItemText) ? CleanNormalize(src.LineItemText) : srcNormDesc;
+                string normHier = !string.IsNullOrWhiteSpace(src.HierarchyPath) ? CleanNormalize(src.HierarchyPath) : "";
+                var lineHashes = !string.IsNullOrWhiteSpace(src.LineItemText) ? ExtractTokenHashes(normLine) : Array.Empty<ulong>();
+                var combinedHashes = tokenHashes.Concat(lineHashes).Distinct().ToArray();
+                Array.Sort(combinedHashes);
+
+                var indexed = new IndexedSourceItem(src, combinedHashes, secHashes, idxCounter++, normLine, normHier);
+                pricedSources.Add(indexed);
+
+                IndexSourceKey(src.BillNumber, indexed);
+                IndexSourceKey(src.SheetName, indexed);
+                if (!string.IsNullOrWhiteSpace(src.HierarchyPath))
+                {
+                    foreach (var part in src.HierarchyPath.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        IndexSourceKey(part, indexed);
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(src.SectionName))
+                {
+                    IndexSourceKey(src.SectionName, indexed);
+                }
+            }
+
+            var allIndexedSources = pricedSources.ToArray();
+            if (allIndexedSources.Length == 0)
+            {
+                for (int tIdx = 0; tIdx < targetItems.Count; tIdx++)
+                {
+                    var tgt = targetItems[tIdx];
+                    if (tgt.OriginalRate.HasValue && tgt.OriginalRate.Value > 0)
+                    {
+                        results[tIdx] = new BoqMatchedPair
+                        {
+                            TargetItem = tgt,
+                            MatchedSourceItem = null,
+                            InjectedRate = tgt.OriginalRate.Value,
+                            SimilarityScore = 1.0,
+                            Confidence = MatchConfidence.Exact,
+                            MatchRationale = "Approved baseline tender rate preserved.",
+                            IsApproved = true
+                        };
+                    }
+                    else if (tgt.OriginalRate.HasValue && tgt.OriginalRate.Value == 0m)
+                    {
+                        results[tIdx] = new BoqMatchedPair
+                        {
+                            TargetItem = tgt,
+                            MatchedSourceItem = null,
+                            InjectedRate = 0m,
+                            SimilarityScore = 1.0,
+                            Confidence = MatchConfidence.Exact,
+                            MatchRationale = "Scope Ignored / Zero-rate confirmed as per tender.",
+                            IsApproved = true
+                        };
+                    }
+                    else
+                    {
+                        results[tIdx] = new BoqMatchedPair
+                        {
+                            TargetItem = tgt with { Type = BoqItemType.VariationOrder },
+                            MatchedSourceItem = null,
+                            SimilarityScore = 0.0,
+                            Confidence = MatchConfidence.Unmatched,
+                            MatchRationale = "No priced source items available in reference files.",
+                            IsApproved = false
+                        };
+                    }
+                }
+                return results;
             }
 
             // 2. Inverted token index for candidate retrieval
@@ -150,45 +245,31 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
                             intraConsumedSourceIds,
                             sensitivity);
 
-                        if (bestCandidate is not null)
+                        if (bestCandidate is not null && bestCandidate.IsApproved)
                         {
                             intraConsumedSourceIds.Add(bestCandidate.Item.Id);
                             consumedGlobalSourceIds.TryAdd(bestCandidate.Item.Id, 1);
 
-                            bool codeMatch = !string.IsNullOrWhiteSpace(target.ItemCode) &&
-                                             !string.IsNullOrWhiteSpace(bestCandidate.Item.ItemCode) &&
-                                             string.Equals(target.ItemCode, bestCandidate.Item.ItemCode, StringComparison.OrdinalIgnoreCase);
-
-                            bool isExact = (bestCandidate.Score >= 0.95 || (bestCandidate.Score >= 0.70 && codeMatch)) &&
-                                           (string.Equals(target.Unit, bestCandidate.Item.Unit, StringComparison.OrdinalIgnoreCase) || AreUnitsCompatible(target.Unit, bestCandidate.Item.Unit));
+                            bool isExact = bestCandidate.Score >= 0.95;
 
                             results[originalIndex] = new BoqMatchedPair
                             {
                                 TargetItem = target,
                                 MatchedSourceItem = bestCandidate.Item,
                                 SimilarityScore = bestCandidate.Score,
-                                Confidence = isExact ? MatchConfidence.Exact : (bestCandidate.Score >= 0.70 || (bestCandidate.Score >= 0.55 && codeMatch) ? MatchConfidence.HighFuzzy : MatchConfidence.ManualReviewNeeded),
+                                Confidence = isExact ? MatchConfidence.Exact : MatchConfidence.HighFuzzy,
                                 MatchRationale = bestCandidate.Rationale,
-                                IsApproved = (bestCandidate.Score >= 0.75 || (bestCandidate.Score >= 0.55 && codeMatch)) && bestCandidate.Item.IsPriced
+                                IsApproved = true
                             };
                             continue;
                         }
 
-                        // Target belongs to a known bill, but was unpriced / not in contractor's bill scope
-                        // Strict Scope Isolation: Do NOT leak rates from other building models
-                        results[originalIndex] = new BoqMatchedPair
-                        {
-                            TargetItem = target with { Type = BoqItemType.VariationOrder },
-                            MatchedSourceItem = null,
-                            SimilarityScore = 0.0,
-                            Confidence = MatchConfidence.Unmatched,
-                            MatchRationale = "Item unpriced or absent in contractor schedule for this specific bill.",
-                            IsApproved = false
-                        };
+                        // Target was not matched intra-bill. Queue for Global Fallback across all pricing sources (Electrical, Mechanical, etc.)
+                        unmatchedTargets.Add(entry);
                         continue;
                     }
 
-                    // Queue for Global Fallback ONLY if the bill itself had no matching source partition
+                    // Queue for Global Fallback if the bill itself had no matching source partition
                     unmatchedTargets.Add(entry);
                 }
             });
@@ -213,7 +294,7 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
                             consumedGlobalSourceIds,
                             sensitivity);
 
-                        if (bestGlobal is not null && bestGlobal.Score >= sensitivity)
+                        if (bestGlobal is not null && bestGlobal.IsApproved)
                         {
                             consumedGlobalSourceIds.TryAdd(bestGlobal.Item.Id, 1);
 
@@ -224,10 +305,36 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
                                 SimilarityScore = bestGlobal.Score,
                                 Confidence = bestGlobal.Score >= 0.95 ? MatchConfidence.Exact : MatchConfidence.HighFuzzy,
                                 MatchRationale = $"Cross-bill fallback: {bestGlobal.Rationale}",
-                                IsApproved = bestGlobal.Score >= 0.90
+                                IsApproved = true
                             };
                         }
-                        else if (bestGlobal is not null && bestGlobal.Score >= 0.70)
+                        else if (target.OriginalRate.HasValue && target.OriginalRate.Value > 0)
+                        {
+                            results[originalIndex] = new BoqMatchedPair
+                            {
+                                TargetItem = target,
+                                MatchedSourceItem = null,
+                                InjectedRate = target.OriginalRate.Value,
+                                SimilarityScore = 1.0,
+                                Confidence = MatchConfidence.Exact,
+                                MatchRationale = "Approved baseline tender rate preserved.",
+                                IsApproved = true
+                            };
+                        }
+                        else if (target.OriginalRate.HasValue && target.OriginalRate.Value == 0m)
+                        {
+                            results[originalIndex] = new BoqMatchedPair
+                            {
+                                TargetItem = target,
+                                MatchedSourceItem = null,
+                                InjectedRate = 0m,
+                                SimilarityScore = 1.0,
+                                Confidence = MatchConfidence.Exact,
+                                MatchRationale = "Scope Ignored / Zero-rate confirmed as per tender.",
+                                IsApproved = true
+                            };
+                        }
+                        else if (bestGlobal is not null && bestGlobal.Score >= 0.65)
                         {
                             results[originalIndex] = new BoqMatchedPair
                             {
@@ -260,6 +367,220 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
         }, ct);
     }
 
+    private static string CleanNormalize(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var sb = new System.Text.StringBuilder(text.Length);
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (char.IsLetterOrDigit(c))
+            {
+                sb.Append(char.ToLowerInvariant(c));
+            }
+            else if (sb.Length > 0 && sb[^1] != ' ')
+            {
+                sb.Append(' ');
+            }
+        }
+        return sb.ToString().Trim();
+    }
+
+    private static ScoredCandidate? EvaluateCandidate(
+        BoqItem target,
+        ulong[] targetHashes,
+        ulong[] targetSecHashes,
+        string targetLineNorm,
+        IndexedSourceItem candidate,
+        Levenshtein levTargetFull,
+        Levenshtein? levTargetLine,
+        double sensitivity)
+    {
+        // 1. Unit Compatibility
+        bool unitExact = string.Equals(target.Unit, candidate.Item.Unit, StringComparison.OrdinalIgnoreCase);
+        bool unitCompatible = unitExact || AreUnitsCompatible(target.Unit, candidate.Item.Unit);
+
+        // 2. Price / Rate Match & Confirmation
+        bool priceConfirmed = false;
+        double priceBonus = 0.0;
+        if (target.OriginalRate.HasValue && target.OriginalRate.Value > 0 && candidate.Item.UnitRate.HasValue && candidate.Item.UnitRate.Value > 0)
+        {
+            decimal rateDiff = Math.Abs(target.OriginalRate.Value - candidate.Item.UnitRate.Value);
+            decimal maxRate = Math.Max(target.OriginalRate.Value, candidate.Item.UnitRate.Value);
+            if (rateDiff / maxRate <= 0.005m)
+            {
+                priceConfirmed = true;
+                priceBonus = 60.0;
+            }
+            else if (rateDiff / maxRate <= 0.02m)
+            {
+                priceBonus = 35.0;
+            }
+        }
+        else if (target.OriginalRate.HasValue && target.OriginalRate.Value == 0m && candidate.Item.UnitRate.HasValue && candidate.Item.UnitRate.Value == 0m)
+        {
+            priceConfirmed = true;
+            priceBonus = 50.0;
+        }
+
+        // Code and Serial Number
+        bool codeMatch = !string.IsNullOrWhiteSpace(target.ItemCode) &&
+                         !string.IsNullOrWhiteSpace(candidate.Item.ItemCode) &&
+                         string.Equals(target.ItemCode, candidate.Item.ItemCode, StringComparison.OrdinalIgnoreCase);
+
+        bool snMatch = !string.IsNullOrWhiteSpace(target.SerialNumber) &&
+                       !string.IsNullOrWhiteSpace(candidate.Item.SerialNumber) &&
+                       string.Equals(target.SerialNumber, candidate.Item.SerialNumber, StringComparison.OrdinalIgnoreCase);
+
+        bool crossMatch = (!string.IsNullOrWhiteSpace(target.ItemCode) && string.Equals(target.ItemCode, candidate.Item.SerialNumber, StringComparison.OrdinalIgnoreCase)) ||
+                          (!string.IsNullOrWhiteSpace(target.SerialNumber) && string.Equals(target.SerialNumber, candidate.Item.ItemCode, StringComparison.OrdinalIgnoreCase));
+
+        if (!unitCompatible && !priceConfirmed && !codeMatch && !snMatch)
+        {
+            return null; // Incompatible unit without strong price/code anchor
+        }
+
+        // 3. Substring Containment & Token Coverage
+        string targetFull = !string.IsNullOrWhiteSpace(target.NormalizedDescription) ? target.NormalizedDescription : CleanNormalize(target.Description);
+        string candFull = !string.IsNullOrWhiteSpace(candidate.Item.NormalizedDescription) ? candidate.Item.NormalizedDescription : CleanNormalize(candidate.Item.Description);
+        string candLine = !string.IsNullOrWhiteSpace(candidate.NormalizedLineItem) ? candidate.NormalizedLineItem : candFull;
+
+        bool isContained = false;
+        if (candLine.Length >= 4 && targetFull.Contains(candLine, StringComparison.OrdinalIgnoreCase)) isContained = true;
+        else if (targetLineNorm.Length >= 4 && candFull.Contains(targetLineNorm, StringComparison.OrdinalIgnoreCase)) isContained = true;
+
+        double tokenCoverage = CalculateTokenCoverage(targetHashes, candidate.TokenHashes);
+        double trigCosine = CalculateTrigonometricCosine(targetHashes, candidate.TokenHashes);
+
+        // 4. Levenshtein Similarities
+        int maxFullLen = Math.Max(targetFull.Length, candFull.Length);
+        double fullLevSim = maxFullLen > 0 ? 1.0 - ((double)levTargetFull.DistanceFrom(candFull) / maxFullLen) : 0.0;
+
+        double lineLevSim = 0.0;
+        if (levTargetLine != null && !string.IsNullOrWhiteSpace(candLine))
+        {
+            int maxLineLen = Math.Max(targetLineNorm.Length, candLine.Length);
+            if (maxLineLen > 0)
+            {
+                lineLevSim = 1.0 - ((double)levTargetLine.DistanceFrom(candLine) / maxLineLen);
+            }
+        }
+
+        double bestLev = Math.Max(fullLevSim, lineLevSim);
+        double textSim = Math.Max(bestLev, trigCosine);
+        if (isContained) textSim = Math.Max(textSim, 0.85);
+        if (tokenCoverage >= 0.80) textSim = Math.Max(textSim, 0.80);
+        else if (tokenCoverage >= 0.50) textSim = Math.Max(textSim, 0.65);
+
+        // 5. Quantity Proximity
+        double qtyBonus = 0.0;
+        if (target.Quantity > 0m && candidate.Item.Quantity > 0m)
+        {
+            if (target.Quantity == candidate.Item.Quantity) qtyBonus = 35.0;
+            else
+            {
+                decimal qDiff = Math.Abs(target.Quantity - candidate.Item.Quantity);
+                decimal maxQ = Math.Max(target.Quantity, candidate.Item.Quantity);
+                if (qDiff / maxQ <= 0.02m) qtyBonus = 25.0;
+                else if (qDiff / maxQ <= 0.05m) qtyBonus = 18.0;
+                else if (qDiff / maxQ <= 0.20m) qtyBonus = 10.0;
+            }
+        }
+        else if (target.Quantity == 0m && candidate.Item.Quantity == 0m)
+        {
+            qtyBonus = 20.0;
+        }
+
+        // 6. Hierarchy & Discipline alignment
+        double hierBonus = 0.0;
+        if (!string.IsNullOrWhiteSpace(candidate.Item.HierarchyPath) && !string.IsNullOrWhiteSpace(target.SheetName))
+        {
+            if (candidate.Item.HierarchyPath.Contains(target.SheetName, StringComparison.OrdinalIgnoreCase) ||
+                candidate.Item.BillNumber.Contains(target.SheetName, StringComparison.OrdinalIgnoreCase))
+            {
+                hierBonus += 30.0;
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(target.WorkbookName) && !string.IsNullOrWhiteSpace(candidate.Item.HierarchyPath))
+        {
+            string shortTgt = Path.GetFileNameWithoutExtension(target.WorkbookName);
+            if (candidate.Item.HierarchyPath.Contains(shortTgt, StringComparison.OrdinalIgnoreCase))
+            {
+                hierBonus += 20.0;
+            }
+        }
+
+        // Discipline Priority Bonus
+        string tSheet = target.SheetName;
+        string tBook = target.WorkbookName;
+        string cBook = candidate.Item.WorkbookName;
+        if ((tSheet.Contains("Elec", StringComparison.OrdinalIgnoreCase) || tSheet.Contains("LF", StringComparison.OrdinalIgnoreCase) || tSheet.Contains("WIR", StringComparison.OrdinalIgnoreCase) || tBook.Contains("Lighting", StringComparison.OrdinalIgnoreCase)) && cBook.Contains("Elect", StringComparison.OrdinalIgnoreCase))
+        {
+            hierBonus += 25.0;
+        }
+        else if ((tSheet.Contains("Mech", StringComparison.OrdinalIgnoreCase) || tSheet.Contains("IRR", StringComparison.OrdinalIgnoreCase) || tSheet.Contains("Pump", StringComparison.OrdinalIgnoreCase)) && cBook.Contains("Mech", StringComparison.OrdinalIgnoreCase))
+        {
+            hierBonus += 25.0;
+        }
+        else if ((tBook.Contains("Landscape", StringComparison.OrdinalIgnoreCase) || tBook.Contains("Golf", StringComparison.OrdinalIgnoreCase)) && cBook.Contains("CANDY", StringComparison.OrdinalIgnoreCase))
+        {
+            hierBonus += 20.0;
+        }
+
+        // 7. Compute Total Fitness
+        double fitness = (textSim * 80.0) + (isContained ? 35.0 : 0.0) + (tokenCoverage * 30.0) + (trigCosine * 20.0) + hierBonus + qtyBonus + priceBonus;
+        if (codeMatch) fitness += 45.0;
+        if (snMatch) fitness += 35.0;
+        if (crossMatch) fitness += 25.0;
+        if (unitExact) fitness += 20.0;
+        else if (unitCompatible) fitness += 10.0;
+        else if (!priceConfirmed && !codeMatch) fitness -= 40.0;
+
+        // 8. Determine final score & approval
+        double finalScore;
+        bool isApproved;
+
+        if (priceConfirmed)
+        {
+            finalScore = Math.Max(0.95, textSim);
+            isApproved = true;
+        }
+        else if (codeMatch || snMatch)
+        {
+            if (textSim >= 0.35 || isContained || tokenCoverage >= 0.30 || (target.Quantity > 0 && target.Quantity == candidate.Item.Quantity))
+            {
+                finalScore = Math.Min(1.0, 0.75 + (textSim * 0.25));
+                isApproved = true;
+            }
+            else
+            {
+                finalScore = textSim;
+                isApproved = false;
+            }
+        }
+        else if (isContained && unitCompatible)
+        {
+            finalScore = Math.Min(1.0, 0.80 + (tokenCoverage * 0.20));
+            isApproved = true;
+        }
+        else if (textSim >= 0.65 && unitCompatible)
+        {
+            finalScore = textSim;
+            isApproved = fitness >= 80.0;
+        }
+        else
+        {
+            finalScore = textSim;
+            isApproved = false;
+        }
+
+        return new ScoredCandidate(
+            candidate.Item,
+            finalScore,
+            $"Matched: Score {finalScore:P0}, Fitness {fitness:F0}, Rate {candidate.Item.UnitRate:N2}, Unit: {candidate.Item.Unit}"
+        ) { Fitness = fitness, IsApproved = isApproved };
+    }
+
     private static ScoredCandidate? FindBestIntraBillCandidate(
         BoqItem target,
         int targetPos,
@@ -269,16 +590,23 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
         HashSet<string> consumedIds,
         double sensitivity)
     {
-        var targetHashes = ExtractTokenHashes(target.NormalizedDescription);
+        string targetDesc = !string.IsNullOrWhiteSpace(target.NormalizedDescription) ? target.NormalizedDescription : CleanNormalize(target.Description);
+        var targetHashes = ExtractTokenHashes(targetDesc);
         var targetSecHashes = ExtractTokenHashes(target.SectionName);
-        var lev = new Levenshtein(target.NormalizedDescription);
+        string targetLineNorm = !string.IsNullOrWhiteSpace(target.LineItemText) ? CleanNormalize(target.LineItemText) : targetDesc;
+        var lineHashes = !string.IsNullOrWhiteSpace(target.LineItemText) ? ExtractTokenHashes(targetLineNorm) : Array.Empty<ulong>();
+        var searchHashes = targetHashes.Concat(lineHashes).Distinct().ToArray();
+        Array.Sort(searchHashes);
+
+        var levFull = new Levenshtein(targetDesc);
+        var levLine = !string.IsNullOrWhiteSpace(targetLineNorm) ? new Levenshtein(targetLineNorm) : null;
 
         ScoredCandidate? best = null;
         double highestFitness = -1.0;
 
         // Prune candidate pool using inverted index when partition is large
-        IReadOnlyList<IndexedSourceItem> candidatePool = (localBillIndex != null && targetHashes.Length > 0)
-            ? localBillIndex.GetTopCandidates(targetHashes, consumedIds, target.Unit, topMax: 40)
+        IReadOnlyList<IndexedSourceItem> candidatePool = (localBillIndex != null && searchHashes.Length > 0)
+            ? localBillIndex.GetTopCandidates(searchHashes, consumedIds, target.Unit, topMax: 60)
             : allCandidates;
 
         for (int cIdx = 0; cIdx < candidatePool.Count; cIdx++)
@@ -286,98 +614,21 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
             var candidate = candidatePool[cIdx];
             if (consumedIds.Contains(candidate.Item.Id)) continue;
 
-            // Unit Compatibility Check
-            bool unitExact = string.Equals(target.Unit, candidate.Item.Unit, StringComparison.OrdinalIgnoreCase);
-            bool unitCompatible = unitExact || AreUnitsCompatible(target.Unit, candidate.Item.Unit);
-            if (!unitCompatible) continue;
-
-            bool codeMatch = !string.IsNullOrWhiteSpace(target.ItemCode) &&
-                             !string.IsNullOrWhiteSpace(candidate.Item.ItemCode) &&
-                             string.Equals(target.ItemCode, candidate.Item.ItemCode, StringComparison.OrdinalIgnoreCase);
-
-            double minTextThresh = codeMatch ? 0.35 : 0.60;
-
-            // 1. Text Similarity Metric
-            double textScore;
-            if (string.Equals(target.NormalizedDescription, candidate.Item.NormalizedDescription, StringComparison.OrdinalIgnoreCase))
-            {
-                textScore = 1.0;
-            }
-            else
-            {
-                int maxLen = Math.Max(target.NormalizedDescription.Length, candidate.Item.NormalizedDescription.Length);
-                if (maxLen == 0) continue;
-
-                double trigCosine = CalculateTrigonometricCosine(targetHashes, candidate.TokenHashes);
-                double jaccard = CalculateSortedHashJaccard(targetHashes, candidate.TokenHashes);
-
-                // Early pruning: check length difference before computing edit distance
-                int lenDiff = Math.Abs(target.NormalizedDescription.Length - candidate.Item.NormalizedDescription.Length);
-                double maxPossibleLev = 1.0 - ((double)lenDiff / maxLen);
-                double maxPossibleScore = (0.55 * maxPossibleLev) + (0.25 * trigCosine) + (0.20 * jaccard);
-                if (maxPossibleScore < minTextThresh) continue;
-
-                int distance = lev.DistanceFrom(candidate.Item.NormalizedDescription);
-                double levScore = 1.0 - ((double)distance / maxLen);
-                textScore = (0.55 * levScore) + (0.25 * trigCosine) + (0.20 * jaccard);
-            }
-
-            if (textScore < minTextThresh) continue;
-
-            // 2. Multi-Factor Disambiguation Fitness
-            double fitness = textScore * 100.0;
-
-            if (unitExact) fitness += 25.0;
-
-            // ItemCode match bonus
-            if (codeMatch)
-            {
-                fitness += 55.0;
-                textScore = Math.Min(1.0, textScore + 0.20);
-            }
-
-            // Quantity match bonus
-            if (target.Quantity > 0m && candidate.Item.Quantity > 0m)
-            {
-                if (target.Quantity == candidate.Item.Quantity)
-                {
-                    fitness += 40.0;
-                }
-                else
-                {
-                    decimal diff = Math.Abs(target.Quantity - candidate.Item.Quantity);
-                    decimal maxQ = Math.Max(target.Quantity, candidate.Item.Quantity);
-                    if (diff / maxQ <= 0.05m) fitness += 25.0;
-                    else if (diff / maxQ <= 0.20m) fitness += 10.0;
-                }
-            }
-            else if (target.Quantity == 0m && candidate.Item.Quantity == 0m)
-            {
-                fitness += 20.0;
-            }
-
-            // Section / Pipe Diameter token overlap bonus
-            if (!string.IsNullOrWhiteSpace(target.SectionName) && !string.IsNullOrWhiteSpace(candidate.Item.SectionName))
-            {
-                double secCosine = CalculateTrigonometricCosine(targetSecHashes, candidate.SectionHashes);
-                fitness += secCosine * 30.0;
-            }
+            var evaluation = EvaluateCandidate(target, targetHashes, targetSecHashes, targetLineNorm, candidate, levFull, levLine, sensitivity);
+            if (evaluation == null) continue;
 
             // Monotonic Sequence Alignment bonus
             double tRatio = totalTargets > 0 ? (double)targetPos / totalTargets : 0.0;
             double cRatio = allCandidates.Count > 0 ? (double)candidate.OriginalIndex / allCandidates.Count : 0.0;
             double posDiff = Math.Abs(tRatio - cRatio);
-            fitness += (1.0 - posDiff) * 20.0;
+            double seqBonus = (1.0 - posDiff) * 15.0;
 
-            double requiredScore = codeMatch ? 0.45 : (sensitivity - 0.25);
-            if (fitness > highestFitness && textScore >= requiredScore)
+            double totalFitness = evaluation.Fitness + seqBonus;
+
+            if (totalFitness > highestFitness && (evaluation.IsApproved || evaluation.Score >= 0.60))
             {
-                highestFitness = fitness;
-                best = new ScoredCandidate(
-                    candidate.Item,
-                    textScore,
-                    $"Intra-bill match: Text {textScore:P0}, Fitness {fitness:F0}, Unit: {candidate.Item.Unit}"
-                );
+                highestFitness = totalFitness;
+                best = evaluation with { Fitness = totalFitness };
             }
         }
 
@@ -390,62 +641,37 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
         ConcurrentDictionary<string, byte> consumedIds,
         double sensitivity)
     {
-        var targetHashes = ExtractTokenHashes(target.NormalizedDescription);
-        if (targetHashes.Length == 0) return null;
+        string targetDesc = !string.IsNullOrWhiteSpace(target.NormalizedDescription) ? target.NormalizedDescription : CleanNormalize(target.Description);
+        var targetHashes = ExtractTokenHashes(targetDesc);
+        string targetLineNorm = !string.IsNullOrWhiteSpace(target.LineItemText) ? CleanNormalize(target.LineItemText) : targetDesc;
+        var lineHashes = !string.IsNullOrWhiteSpace(target.LineItemText) ? ExtractTokenHashes(targetLineNorm) : Array.Empty<ulong>();
+        var searchHashes = targetHashes.Concat(lineHashes).Distinct().ToArray();
+        Array.Sort(searchHashes);
 
-        var candidates = invertedIndex.GetTopCandidates(targetHashes, consumedIds, target.Unit, topMax: 40);
+        if (searchHashes.Length == 0) return null;
+
+        var candidates = invertedIndex.GetTopCandidates(searchHashes, consumedIds, target.Unit, topMax: 60);
         if (candidates.Count == 0) return null;
 
-        var lev = new Levenshtein(target.NormalizedDescription);
+        var targetSecHashes = ExtractTokenHashes(target.SectionName);
+        var levFull = new Levenshtein(targetDesc);
+        var levLine = !string.IsNullOrWhiteSpace(targetLineNorm) ? new Levenshtein(targetLineNorm) : null;
+
         ScoredCandidate? best = null;
-        double bestScore = 0.0;
+        double highestFitness = -1.0;
 
         for (int i = 0; i < candidates.Count; i++)
         {
             var candidate = candidates[i];
             if (consumedIds.ContainsKey(candidate.Item.Id)) continue;
-            
-            bool unitOk = string.IsNullOrEmpty(target.Unit) || 
-                          string.IsNullOrEmpty(candidate.Item.Unit) || 
-                          string.Equals(target.Unit, candidate.Item.Unit, StringComparison.OrdinalIgnoreCase) || 
-                          AreUnitsCompatible(target.Unit, candidate.Item.Unit);
-            if (!unitOk) continue;
 
-            double trigCosine = CalculateTrigonometricCosine(targetHashes, candidate.TokenHashes);
-            if (trigCosine < 0.20) continue;
+            var evaluation = EvaluateCandidate(target, targetHashes, targetSecHashes, targetLineNorm, candidate, levFull, levLine, sensitivity);
+            if (evaluation == null) continue;
 
-            int maxLen = Math.Max(target.NormalizedDescription.Length, candidate.Item.NormalizedDescription.Length);
-            if (maxLen == 0) continue;
-
-            double jaccard = CalculateSortedHashJaccard(targetHashes, candidate.TokenHashes);
-
-            // Early-Exit Pruning
-            int lenDiff = Math.Abs(target.NormalizedDescription.Length - candidate.Item.NormalizedDescription.Length);
-            double maxPossibleLev = 1.0 - ((double)lenDiff / maxLen);
-            double maxPossibleScore = (0.60 * maxPossibleLev) + (0.20 * trigCosine) + (0.20 * jaccard);
-            if (maxPossibleScore < Math.Max(0.65, bestScore)) continue;
-
-            int distance = lev.DistanceFrom(candidate.Item.NormalizedDescription);
-            double levScore = 1.0 - ((double)distance / maxLen);
-            double score = (0.60 * levScore) + (0.20 * trigCosine) + (0.20 * jaccard);
-
-            if (AreBillsRelated(target.BillNumber, candidate.Item.BillNumber))
+            if (evaluation.Fitness > highestFitness && (evaluation.IsApproved || evaluation.Score >= 0.60))
             {
-                score = Math.Min(1.0, score + 0.05);
-            }
-            else
-            {
-                score -= 0.05; // Cross-bill penalty
-            }
-
-            if (score > bestScore)
-            {
-                bestScore = score;
-                best = new ScoredCandidate(
-                    candidate.Item,
-                    score,
-                    $"Global fallback score: {score:P1} (Lev: {levScore:P1}, Cos: {trigCosine:P1})"
-                );
+                highestFitness = evaluation.Fitness;
+                best = evaluation;
             }
         }
 
@@ -656,7 +882,7 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
                     !string.Equals(targetUnit, candidate.Item.Unit, StringComparison.OrdinalIgnoreCase) &&
                     !AreUnitsCompatible(targetUnit, candidate.Item.Unit))
                 {
-                    continue;
+                    if (hits[h].Value < 2) continue;
                 }
 
                 results.Add(candidate);
@@ -705,7 +931,7 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
                     !string.Equals(targetUnit, candidate.Item.Unit, StringComparison.OrdinalIgnoreCase) &&
                     !AreUnitsCompatible(targetUnit, candidate.Item.Unit))
                 {
-                    continue;
+                    if (hits[h].Value < 2) continue;
                 }
 
                 results.Add(candidate);
@@ -716,7 +942,18 @@ public sealed class HybridWeightedMatcher : BaseItemMatcher
         }
     }
 
-    private sealed record IndexedSourceItem(BoqItem Item, ulong[] TokenHashes, ulong[] SectionHashes, int OriginalIndex);
+    private sealed record IndexedSourceItem(
+        BoqItem Item,
+        ulong[] TokenHashes,
+        ulong[] SectionHashes,
+        int OriginalIndex,
+        string NormalizedLineItem = "",
+        string NormalizedHierarchy = ""
+    );
     private sealed record TargetItemEntry(BoqItem Item, int OriginalIndex);
-    private sealed record ScoredCandidate(BoqItem Item, double Score, string Rationale);
+    private sealed record ScoredCandidate(BoqItem Item, double Score, string Rationale)
+    {
+        public double Fitness { get; init; }
+        public bool IsApproved { get; init; }
+    }
 }

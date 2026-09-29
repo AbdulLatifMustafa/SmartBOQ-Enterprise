@@ -38,7 +38,7 @@ public interface IVerificationGate
 /// </summary>
 public interface IBoqInspector
 {
-    Task<BoqFileInfo> InspectWorkbookAsync(string filePath, BoqFileRole role = BoqFileRole.ContractorPriced, CancellationToken ct = default);
+    Task<BoqFileInfo> InspectWorkbookAsync(string filePath, BoqFileRole? preferredRole = null, CancellationToken ct = default);
     Task<IReadOnlyList<SheetLinkMapping>> AutoLinkSheetsAsync(IReadOnlyList<BoqSheetSummary> targetSheets, IReadOnlyList<BoqSheetSummary> sourceSheets, CancellationToken ct = default);
     Task<ColumnMappingModel> DetectColumnMappingAsync(string sourceFilePath, string targetFilePath, CancellationToken ct = default);
 }

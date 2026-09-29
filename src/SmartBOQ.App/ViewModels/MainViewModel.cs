@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -48,6 +49,9 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
     private string _lastExportedSchedulePath = string.Empty;
     private string _lastExportedDashboardPath = string.Empty;
     private string _lastExportedFolder = string.Empty;
+    private string _zipOutputFilePath = string.Empty;
+    private string _lastExportedZipPath = string.Empty;
+    private bool _isZipExported;
 
     private bool _isLoading;
     private int _progressPercentage;
@@ -86,6 +90,25 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
     public ObservableCollection<BoqMatchedPair> MatchedPairs { get; } = [];
     public ICollectionView FilteredItems { get; }
     public ObservableCollection<BoqMatchedPair> PagedItems { get; } = [];
+
+    // Multi-Target Reconciliation State & Filtering
+    public ObservableCollection<string> TargetFilterOptions { get; } = [];
+    private string _selectedTargetFilter = string.Empty;
+    public string SelectedTargetFilter
+    {
+        get => _selectedTargetFilter;
+        set
+        {
+            if (SetField(ref _selectedTargetFilter, value))
+            {
+                ApplyTargetFilter();
+            }
+        }
+    }
+    public bool HasMultipleTargets => TargetFilterOptions.Count > 1;
+
+    private readonly List<BoqMatchedPair> _allReconciledPairs = [];
+    private readonly Dictionary<string, ReconciliationResult> _targetResultsMap = new(StringComparer.OrdinalIgnoreCase);
 
     // Pagination for BOQ Items (100 items per page)
     private int _currentPage = 1;
@@ -172,6 +195,9 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         ReconcileCommand = new AsyncRelayCommand(ExecuteReconcileAsync);
         ReconcileAndExportCommand = new AsyncRelayCommand(ExecuteReconcileAndExportAsync);
         ExportCommand = new AsyncRelayCommand(ExecuteExportAsync);
+        ExportAllZipCommand = new AsyncRelayCommand(ExecuteExportAllZipAsync);
+        BrowseZipOutputCommand = new RelayCommand(_ => BrowseZipOutput());
+        OpenZipFileCommand = new RelayCommand(_ => OpenZipFile());
         OpenReconciledFileCommand = new RelayCommand(OpenPricedFile);
         OpenDashboardCommand = new RelayCommand(OpenDashboard);
         OpenOutputFolderCommand = new RelayCommand(OpenOutputFolder);
@@ -184,6 +210,8 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         AddNewFileCommand = new AsyncRelayCommand(AddNewFileAsync);
         RemoveFileCommand = new RelayCommand(p => RemoveFile(p as BoqFileInfo));
         SetPrimaryTargetCommand = new RelayCommand(p => SetPrimaryTarget(p as BoqFileInfo));
+        SetPrimaryContractorCommand = new RelayCommand(p => SetPrimarySource(p as BoqFileInfo));
+        SetPrimaryConsultantCommand = new RelayCommand(p => SetPrimaryTarget(p as BoqFileInfo));
         AutoLinkSheetsCommand = new AsyncRelayCommand(AutoLinkSheetsAsync);
         LinkAllGlobalCommand = new RelayCommand(LinkAllGlobal);
         AutoDetectColumnsCommand = new AsyncRelayCommand(AutoDetectColumnsAsync);
@@ -280,6 +308,21 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
     public string LastExportedSchedulePath { get => _lastExportedSchedulePath; set => SetField(ref _lastExportedSchedulePath, value); }
     public string LastExportedDashboardPath { get => _lastExportedDashboardPath; set => SetField(ref _lastExportedDashboardPath, value); }
     public string LastExportedFolder { get => _lastExportedFolder; set => SetField(ref _lastExportedFolder, value); }
+    public bool IsZipExported { get => _isZipExported; set => SetField(ref _isZipExported, value); }
+    public string ZipOutputFilePath { get => _zipOutputFilePath; set => SetField(ref _zipOutputFilePath, value); }
+    public string LastExportedZipPath { get => _lastExportedZipPath; set => SetField(ref _lastExportedZipPath, value); }
+    public string DefaultExportDirectoryDisplay => GetDefaultExportDirectory();
+
+    public static string GetDefaultExportDirectory()
+    {
+        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        string exportDir = Path.Combine(baseDir, "Exported_BOQs");
+        if (!Directory.Exists(exportDir))
+        {
+            try { Directory.CreateDirectory(exportDir); } catch { }
+        }
+        return Directory.Exists(exportDir) ? exportDir : baseDir;
+    }
 
     public bool IsLoading { get => _isLoading; set => SetField(ref _isLoading, value); }
     public int ProgressPercentage { get => _progressPercentage; set => SetField(ref _progressPercentage, value); }
@@ -778,6 +821,9 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
     public AsyncRelayCommand ReconcileCommand { get; }
     public AsyncRelayCommand ReconcileAndExportCommand { get; }
     public AsyncRelayCommand ExportCommand { get; }
+    public AsyncRelayCommand ExportAllZipCommand { get; }
+    public RelayCommand BrowseZipOutputCommand { get; }
+    public RelayCommand OpenZipFileCommand { get; }
     public RelayCommand OpenReconciledFileCommand { get; }
     public RelayCommand OpenDashboardCommand { get; }
     public RelayCommand OpenOutputFolderCommand { get; }
@@ -797,6 +843,8 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
     public AsyncRelayCommand AddNewFileCommand { get; }
     public RelayCommand RemoveFileCommand { get; }
     public RelayCommand SetPrimaryTargetCommand { get; }
+    public RelayCommand SetPrimaryContractorCommand { get; }
+    public RelayCommand SetPrimaryConsultantCommand { get; }
     public AsyncRelayCommand AutoLinkSheetsCommand { get; }
     public RelayCommand LinkAllGlobalCommand { get; }
     public AsyncRelayCommand AutoDetectColumnsCommand { get; }
@@ -866,22 +914,30 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
     {
         if (string.IsNullOrWhiteSpace(_fileBPath)) return;
 
-        string dir = Path.GetDirectoryName(_fileBPath) ?? string.Empty;
+        string fixedDir = GetDefaultExportDirectory();
         string nameWithoutExt = Path.GetFileNameWithoutExtension(_fileBPath);
         if (nameWithoutExt.EndsWith("_Reconciled", StringComparison.OrdinalIgnoreCase))
         {
             nameWithoutExt = nameWithoutExt[..^11];
         }
 
-        if (string.IsNullOrWhiteSpace(OutputFilePath))
+        string sourceDir = Path.GetDirectoryName(_fileBPath) ?? string.Empty;
+
+        // Default to the fixed export directory beside the executable
+        if (string.IsNullOrWhiteSpace(OutputFilePath) || OutputFilePath.StartsWith(sourceDir, StringComparison.OrdinalIgnoreCase))
         {
-            OutputFilePath = Path.Combine(dir, $"{nameWithoutExt}_Reconciled.xlsx");
+            OutputFilePath = Path.Combine(fixedDir, $"{nameWithoutExt}_Reconciled.xlsx");
         }
 
         string targetDir = !string.IsNullOrWhiteSpace(OutputFilePath) 
-            ? (Path.GetDirectoryName(OutputFilePath) ?? dir) 
-            : dir;
+            ? (Path.GetDirectoryName(OutputFilePath) ?? fixedDir) 
+            : fixedDir;
         DashboardFilePath = Path.Combine(targetDir, $"{nameWithoutExt}_Executive_Dashboard.xlsx");
+
+        if (string.IsNullOrWhiteSpace(ZipOutputFilePath) || ZipOutputFilePath.StartsWith(sourceDir, StringComparison.OrdinalIgnoreCase))
+        {
+            ZipOutputFilePath = Path.Combine(fixedDir, $"{nameWithoutExt}_All_Reconciled_Packages_{DateTime.Now:yyyyMMdd_HHmm}.zip");
+        }
     }
 
     private void BrowseFileA()
@@ -906,6 +962,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
 
     private void BrowseOutput()
     {
+        string defaultDir = GetDefaultExportDirectory();
         string defaultName = !string.IsNullOrWhiteSpace(FileBPath)
             ? $"{Path.GetFileNameWithoutExtension(FileBPath)}_Reconciled.xlsx"
             : "Reconciled_Pricing_Schedule.xlsx";
@@ -913,7 +970,8 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         var dlg = new SaveFileDialog
         {
             Filter = "Excel Files (*.xlsx)|*.xlsx",
-            FileName = defaultName
+            FileName = defaultName,
+            InitialDirectory = defaultDir
         };
         if (dlg.ShowDialog() == true) OutputFilePath = dlg.FileName;
     }
@@ -969,9 +1027,173 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         }
     }
 
+    private void ApplyTargetFilter()
+    {
+        if (_allReconciledPairs.Count == 0) return;
+
+        bool isAll = string.IsNullOrWhiteSpace(SelectedTargetFilter) ||
+                     SelectedTargetFilter.StartsWith("All", StringComparison.OrdinalIgnoreCase) ||
+                     SelectedTargetFilter.StartsWith("الكل", StringComparison.OrdinalIgnoreCase) ||
+                     SelectedTargetFilter.StartsWith("جميع", StringComparison.OrdinalIgnoreCase) ||
+                     SelectedTargetFilter.StartsWith("(جميع", StringComparison.OrdinalIgnoreCase);
+
+        MatchedPairs.Clear();
+
+        IEnumerable<BoqMatchedPair> source = isAll
+            ? _allReconciledPairs
+            : _allReconciledPairs.Where(p => p.TargetItem.WorkbookName.Equals(SelectedTargetFilter, StringComparison.OrdinalIgnoreCase));
+
+        var sorted = source
+            .OrderByDescending(p => p.InjectedRate.HasValue && p.InjectedRate > 0 && !p.IsProvisionalSum)
+            .ThenBy(p => p.IsProvisionalSum)
+            .ThenBy(p => p.TargetItem.WorkbookName)
+            .ThenBy(p => p.TargetItem.BillNumber)
+            .ThenBy(p => p.TargetItem.AnchorRowIndex)
+            .ToList();
+
+        foreach (var p in sorted)
+        {
+            MatchedPairs.Add(p);
+        }
+
+        if (!isAll && _targetResultsMap.TryGetValue(SelectedTargetFilter, out var singleResult))
+        {
+            Result = singleResult;
+        }
+        else if (isAll && _targetResultsMap.Count > 0)
+        {
+            Result = CreateAggregateResult(_targetResultsMap.Values);
+        }
+
+        FilteredItems.Refresh();
+        UpdatePagination(resetToPageOne: true);
+    }
+
+    private static ReconciliationResult CreateAggregateResult(IEnumerable<ReconciliationResult> results)
+    {
+        var list = results.ToList();
+        var allPairs = list.SelectMany(r => r.MatchedPairs).ToList();
+        var allSheets = list.SelectMany(r => r.TargetSheets).ToList();
+        var allSources = list.FirstOrDefault()?.SourceItems ?? new List<BoqItem>();
+        var totalTime = TimeSpan.FromMilliseconds(list.Sum(r => r.ElapsedTime.TotalMilliseconds));
+
+        var currMap = new Dictionary<string, (decimal tender, decimal remeasure, int count)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in list)
+        {
+            foreach (var c in r.CurrencySummaries)
+            {
+                if (!currMap.TryGetValue(c.Currency, out var vals))
+                {
+                    vals = (0m, 0m, 0);
+                }
+                currMap[c.Currency] = (vals.tender + c.TotalBaseAmount, vals.remeasure + c.TotalRemeasureAmount, vals.count + c.ItemsCount);
+            }
+        }
+
+        var summaries = currMap.Select(kvp => new CurrencyBucketSummary
+        {
+            Currency = kvp.Key,
+            TotalBaseAmount = kvp.Value.tender,
+            TotalRemeasureAmount = kvp.Value.remeasure,
+            ItemsCount = kvp.Value.count
+        }).ToList();
+
+        return new ReconciliationResult
+        {
+            MatchedPairs = allPairs,
+            TargetSheets = allSheets,
+            SourceItems = allSources,
+            CurrencySummaries = summaries,
+            ElapsedTime = totalTime
+        };
+    }
+
+    private async Task ExecuteMultiTargetReconcileAsync(List<string> sourceFilePaths, List<BoqFileInfo> targetFiles, CancellationToken ct)
+    {
+        IsLoading = true;
+        ProgressPercentage = 5;
+        StatusMessage = IsArabic 
+            ? $"جارٍ فحص وتوزيع الأسعار لـ ({targetFiles.Count}) مقايسات استشارية..." 
+            : $"Reconciling line items across ({targetFiles.Count}) consultant schedules...";
+
+        _allReconciledPairs.Clear();
+        _targetResultsMap.Clear();
+        TargetFilterOptions.Clear();
+
+        int currentTgt = 0;
+        var swTotal = Stopwatch.StartNew();
+
+        foreach (var tFile in targetFiles)
+        {
+            ct.ThrowIfCancellationRequested();
+            currentTgt++;
+            ProgressPercentage = (int)((double)currentTgt / targetFiles.Count * 90.0);
+            StatusMessage = IsArabic 
+                ? $"جارٍ مطابقة المقايسة ({currentTgt}/{targetFiles.Count}): {tFile.FileName}..." 
+                : $"Matching target ({currentTgt}/{targetFiles.Count}): {tFile.FileName}...";
+
+            var targetResult = await _service.ReconcileMultiSourceAsync(
+                sourceFilePaths,
+                tFile.FilePath,
+                Sensitivity,
+                sheetMappings: null,
+                columnMappings: (ActiveColumnMapping != null && !ActiveColumnMapping.IsAutoDetected) ? ActiveColumnMapping : null,
+                ct: ct);
+
+            foreach (var p in targetResult.MatchedPairs)
+            {
+                if (p.InjectedRate.HasValue && !p.IsProvisionalSum && p.Confidence != MatchConfidence.ManualReviewNeeded)
+                {
+                    p.IsApproved = true;
+                }
+            }
+
+            _targetResultsMap[tFile.FileName] = targetResult;
+            _allReconciledPairs.AddRange(targetResult.MatchedPairs);
+        }
+
+        swTotal.Stop();
+        ProgressPercentage = 100;
+
+        string allOption = IsArabic 
+            ? $"جميع المقايسات المستهدفة ({_allReconciledPairs.Count:N0} بند)" 
+            : $"All Target BOQs ({_allReconciledPairs.Count:N0} items)";
+
+        TargetFilterOptions.Add(allOption);
+        foreach (var tFile in targetFiles)
+        {
+            TargetFilterOptions.Add(tFile.FileName);
+        }
+
+        OnPropertyChanged(nameof(HasMultipleTargets));
+        SelectedTargetFilter = allOption;
+        ApplyTargetFilter();
+
+        int totalPriced = _allReconciledPairs.Count(p => p.InjectedRate.HasValue && p.InjectedRate > 0 && !p.IsProvisionalSum);
+        int totalSheets = _targetResultsMap.Values.Sum(r => r.TargetSheets.Count);
+
+        StatusMessage = IsArabic 
+            ? $"اكتملت المطابقة الذكية في {swTotal.Elapsed.TotalSeconds:F2} ثانية ({totalPriced:N0} بند مسعر عبر {totalSheets} جدول في {targetFiles.Count} مقايسة)" 
+            : $"Multi-target reconciliation complete in {swTotal.Elapsed.TotalSeconds:F2}s ({totalPriced:N0} priced items across {totalSheets} tables in {targetFiles.Count} BOQs)";
+
+        SelectedTabIndex = 2; // Jump to Pricing Table tab
+    }
+
     private async Task ExecuteReconcileAsync()
     {
-        if (string.IsNullOrWhiteSpace(FileAPath) || !File.Exists(FileAPath))
+        // Gather all candidate source files
+        var sourceFilePaths = IngestedFiles
+            .Where(f => f.Role != BoqFileRole.ConsultantTarget && File.Exists(f.FilePath))
+            .Select(f => f.FilePath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (sourceFilePaths.Count == 0 && File.Exists(FileAPath))
+        {
+            sourceFilePaths.Add(FileAPath);
+        }
+
+        if (sourceFilePaths.Count == 0)
         {
             MessageBox.Show(
                 IsArabic ? "يرجى تحديد مسار ملف المقاول (File A) أولاً!" : "Please select Contractor Flat BOQ (File A) first!",
@@ -981,7 +1203,11 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(FileBPath) || !File.Exists(FileBPath))
+        var targetFiles = IngestedFiles
+            .Where(f => f.Role == BoqFileRole.ConsultantTarget && File.Exists(f.FilePath))
+            .ToList();
+
+        if (targetFiles.Count == 0 && (string.IsNullOrWhiteSpace(FileBPath) || !File.Exists(FileBPath)))
         {
             MessageBox.Show(
                 IsArabic ? "يرجى تحديد مسار ملف الاستشاري (File B) أولاً!" : "Please select Consultant Pricing Schedule (File B) first!",
@@ -996,51 +1222,50 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         try
         {
             var ct = _activeOperationCts.Token;
+
+            // If multiple consultant files exist, run multi-target smart distribution across all packages!
+            if (targetFiles.Count > 1)
+            {
+                await ExecuteMultiTargetReconcileAsync(sourceFilePaths, targetFiles, ct);
+                return;
+            }
+
             IsLoading = true;
             ProgressPercentage = 10;
             StatusMessage = IsArabic ? "جارٍ قراءة الملفات ومطابقة البنود بالخوارزميات الذكية..." : "Reconciling line items with intelligent algorithms...";
 
-            // Gather all candidate source files
-            var sourceFilePaths = IngestedFiles
-                .Where(f => f.Role != BoqFileRole.ConsultantTarget && File.Exists(f.FilePath))
-                .Select(f => f.FilePath)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            if (sourceFilePaths.Count == 0 && File.Exists(FileAPath))
-            {
-                sourceFilePaths.Add(FileAPath);
-            }
+            string targetPath = targetFiles.Count == 1 ? targetFiles[0].FilePath : FileBPath;
 
             var result = await _service.ReconcileMultiSourceAsync(
                 sourceFilePaths,
-                FileBPath,
+                targetPath,
                 Sensitivity,
                 SheetLinkMappings.Select(m => m.ToModel()).ToList(),
-                ActiveColumnMapping,
+                (ActiveColumnMapping != null && !ActiveColumnMapping.IsAutoDetected) ? ActiveColumnMapping : null,
                 ct);
 
             ct.ThrowIfCancellationRequested();
 
-            // Sort so that PRICED / MATCHED items appear at the very top!
-            var sortedPairs = result.MatchedPairs
-                .OrderByDescending(p => p.InjectedRate.HasValue && p.InjectedRate > 0 && !p.IsProvisionalSum)
-                .ThenBy(p => p.IsProvisionalSum)
-                .ThenBy(p => p.TargetItem.BillNumber)
-                .ThenBy(p => p.TargetItem.AnchorRowIndex)
-                .ToList();
+            _targetResultsMap.Clear();
+            _allReconciledPairs.Clear();
+            TargetFilterOptions.Clear();
 
-            MatchedPairs.Clear();
-            foreach (var p in sortedPairs)
+            string singleFileName = Path.GetFileName(targetPath);
+            foreach (var p in result.MatchedPairs)
             {
                 if (p.InjectedRate.HasValue && !p.IsProvisionalSum && p.Confidence != MatchConfidence.ManualReviewNeeded)
                 {
                     p.IsApproved = true;
                 }
-                MatchedPairs.Add(p);
             }
-            FilteredItems.Refresh();
-            UpdatePagination(resetToPageOne: true);
+
+            _targetResultsMap[singleFileName] = result;
+            _allReconciledPairs.AddRange(result.MatchedPairs);
+
+            TargetFilterOptions.Add(singleFileName);
+            OnPropertyChanged(nameof(HasMultipleTargets));
+            SelectedTargetFilter = singleFileName;
+            ApplyTargetFilter();
 
             Result = result;
             ProgressPercentage = 100;
@@ -1048,7 +1273,7 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             // Generate diagnostic report in Log folder
             try
             {
-                ReconciliationDiagnosticLogger.WriteDiagnosticReport(FileBPath, sourceFilePaths, result);
+                ReconciliationDiagnosticLogger.WriteDiagnosticReport(targetPath, sourceFilePaths, result);
             }
             catch { }
 
@@ -1095,6 +1320,43 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
 
     private async Task ExecuteReconcileAndExportAsync()
     {
+        var targetFiles = IngestedFiles
+            .Where(f => f.Role == BoqFileRole.ConsultantTarget && File.Exists(f.FilePath))
+            .ToList();
+
+        var sourceFiles = IngestedFiles
+            .Where(f => f.Role != BoqFileRole.ConsultantTarget && File.Exists(f.FilePath))
+            .Select(f => f.FilePath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (sourceFiles.Count == 0 && File.Exists(FileAPath))
+        {
+            sourceFiles.Add(FileAPath);
+        }
+
+        // If multiple consultant targets are selected, offer unified ZIP package export!
+        if (targetFiles.Count > 1 && sourceFiles.Count > 0)
+        {
+            var zipChoice = MessageBox.Show(
+                IsArabic
+                    ? $"تم اكتشاف ({targetFiles.Count}) مقايسات استشارية مستهدفة.\n\nهل ترغب في دمج وتصدير كافة المقايسات في حزمة مضغوطة واحدة (ZIP Archive)؟\n\n• اضغط (Yes / نعم): لتصدير كافة المقايسات مدمجة داخل ملف مضغوط ZIP شامل لوحة المؤشرات والتقارير.\n• اضغط (No / لا): لتصدير المقايسات كملفات إكسيل منفصلة في المجلد.\n• اضغط (Cancel / إلغاء): لإلغاء العملية."
+                    : $"Multiple ({targetFiles.Count}) consultant schedules detected.\n\nWould you like to export all schedules into a unified ZIP archive?\n\n• Click Yes: Export all into a single ZIP archive.\n• Click No: Export as individual Excel files.\n• Click Cancel: Abort.",
+                IsArabic ? "تصدير المقايسات المتعددة" : "Multi-BOQ Export Option",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Question);
+
+            if (zipChoice == MessageBoxResult.Cancel) return;
+            if (zipChoice == MessageBoxResult.Yes)
+            {
+                await ExecuteExportAllZipAsync();
+                return;
+            }
+
+            await ExecuteBatchReconcileAndExportAsync(sourceFiles, targetFiles.Select(f => f.FilePath).ToList());
+            return;
+        }
+
         await ExecuteReconcileAsync();
         if (Result != null && MatchedPairs.Count > 0)
         {
@@ -1102,8 +1364,452 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         }
     }
 
+    private async Task ExecuteBatchReconcileAndExportAsync(List<string> sourceFiles, List<string> targetFiles)
+    {
+        _activeOperationCts = new CancellationTokenSource();
+        OnPropertyChanged(nameof(CanCancel));
+        try
+        {
+            var ct = _activeOperationCts.Token;
+            IsLoading = true;
+            ProgressPercentage = 10;
+            StatusMessage = IsArabic 
+                ? $"جارٍ بدء الفحص الشامل والتسعير الدفعي لـ ({targetFiles.Count}) مقايسات استشارية..." 
+                : $"Starting batch reconciliation across ({targetFiles.Count}) consultant schedules...";
+
+            string exportRoot = GetDefaultExportDirectory();
+            string timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmm");
+            string batchFolderName = $"Batch_Reconciled_{timeStamp}";
+            string outDir = Path.Combine(exportRoot, batchFolderName);
+            Directory.CreateDirectory(outDir);
+
+            var batchProgress = new Progress<(int current, int total, string targetName)>(p =>
+            {
+                ProgressPercentage = (int)((double)p.current / p.total * 90.0);
+                StatusMessage = IsArabic 
+                    ? $"جارٍ تسعير مقايسة ({p.current}/{p.total}): {p.targetName}..." 
+                    : $"Reconciling target ({p.current}/{p.total}): {p.targetName}...";
+            });
+
+            var batchResults = await _service.ReconcileBatchMultiTargetAsync(
+                sourceFiles,
+                targetFiles,
+                outDir,
+                Sensitivity,
+                (ActiveColumnMapping != null && !ActiveColumnMapping.IsAutoDetected) ? ActiveColumnMapping : null,
+                batchProgress,
+                ct);
+
+            // Copy all contractor priced source files alongside the reconciled files for direct comparison
+            var copiedSources = new List<string>();
+            foreach (var sPath in sourceFiles)
+            {
+                if (File.Exists(sPath))
+                {
+                    string srcCopyName = $"[Source_Priced]_{Path.GetFileName(sPath)}";
+                    string srcCopyDest = Path.Combine(outDir, srcCopyName);
+                    try
+                    {
+                        File.Copy(sPath, srcCopyDest, overwrite: true);
+                        copiedSources.Add(srcCopyName);
+                    }
+                    catch { /* non-fatal */ }
+                }
+            }
+
+            LastExportedFolder = outDir;
+            IsExported = true;
+            ProgressPercentage = 100;
+
+            // Load all target results into UI for immediate inspection & multi-file navigation
+            if (batchResults.Count > 0)
+            {
+                _targetResultsMap.Clear();
+                _allReconciledPairs.Clear();
+                TargetFilterOptions.Clear();
+
+                string allBatchOption = IsArabic 
+                    ? $"جميع المقايسات المستهدفة ({batchResults.Sum(b => b.TotalItems):N0} بند)" 
+                    : $"All Target BOQs ({batchResults.Sum(b => b.TotalItems):N0} items)";
+                TargetFilterOptions.Add(allBatchOption);
+
+                foreach (var b in batchResults)
+                {
+                    _targetResultsMap[b.TargetFileName] = b.Result;
+                    _allReconciledPairs.AddRange(b.Result.MatchedPairs);
+                    TargetFilterOptions.Add(b.TargetFileName);
+                }
+
+                OnPropertyChanged(nameof(HasMultipleTargets));
+                SelectedTargetFilter = allBatchOption;
+                ApplyTargetFilter();
+
+                var firstValid = batchResults.FirstOrDefault(b => b.TotalItems > 0) ?? batchResults[0];
+                FileBPath = firstValid.TargetFilePath;
+                OutputFilePath = firstValid.OutputFilePath;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(IsArabic 
+                ? $"تم الفحص والتسعير والتصدير الشامل لـ ({batchResults.Count}) مقايسة استشارية بنجاح!\nالمجلد: {outDir}\n" 
+                : $"Batch reconciliation complete for ({batchResults.Count}) target schedules!\nFolder: {outDir}\n");
+
+            foreach (var b in batchResults)
+            {
+                sb.AppendLine($"• {b.TargetFileName}: {b.MatchedItems}/{b.TotalItems} بند مسعر ({b.MatchRate:F1}%) -> {b.OutputFileName}");
+            }
+
+            MessageBox.Show(sb.ToString(), IsArabic ? "اكتمل التسعير الدفعي الشامل" : "Batch Export Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+            StatusMessage = IsArabic 
+                ? $"تم إنتاج وتصدير {batchResults.Count} ملفات استشارية مسعرة بنجاح." 
+                : $"Successfully exported {batchResults.Count} reconciled consultant schedules.";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = IsArabic ? "تم إلغاء عملية التسعير الدفعي." : "Batch reconciliation cancelled.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = IsArabic ? $"خطأ أثناء التسعير الدفعي: {ex.Message}" : $"Batch reconciliation error: {ex.Message}";
+            MessageBox.Show(ex.Message, IsArabic ? "خطأ" : "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    public void BrowseZipOutput()
+    {
+        string defaultDir = GetDefaultExportDirectory();
+        var dlg = new SaveFileDialog
+        {
+            Filter = IsArabic ? "ملف أرشيف مضغوط (*.zip)|*.zip" : "ZIP Archive (*.zip)|*.zip",
+            DefaultExt = ".zip",
+            InitialDirectory = defaultDir,
+            FileName = !string.IsNullOrWhiteSpace(ZipOutputFilePath) ? Path.GetFileName(ZipOutputFilePath) : "Consolidated_Reconciled_BOQs.zip",
+            Title = IsArabic ? "اختر مسار حفظ حزمة المقايسات المدمجة (ZIP)" : "Select Reconciled ZIP Archive Output Path"
+        };
+
+        if (dlg.ShowDialog() == true)
+        {
+            ZipOutputFilePath = dlg.FileName;
+        }
+    }
+
+    public void OpenZipFile()
+    {
+        string path = !string.IsNullOrWhiteSpace(LastExportedZipPath) && File.Exists(LastExportedZipPath)
+            ? LastExportedZipPath
+            : ZipOutputFilePath;
+
+        if (File.Exists(path))
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, IsArabic ? "خطأ في فتح الملف" : "Error opening file", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+        else if (Directory.Exists(LastExportedFolder))
+        {
+            OpenOutputFolder();
+        }
+    }
+
+    public async Task ExecuteExportAllZipAsync()
+    {
+        var targetFiles = IngestedFiles
+            .Where(f => f.Role == BoqFileRole.ConsultantTarget && File.Exists(f.FilePath))
+            .ToList();
+
+        if (targetFiles.Count == 0 && !string.IsNullOrWhiteSpace(FileBPath) && File.Exists(FileBPath))
+        {
+            targetFiles.Add(new BoqFileInfo 
+            { 
+                FilePath = FileBPath, 
+                FileName = Path.GetFileName(FileBPath), 
+                Role = BoqFileRole.ConsultantTarget 
+            });
+        }
+
+        if (targetFiles.Count == 0)
+        {
+            MessageBox.Show(
+                IsArabic ? "لا توجد ملفات مقايسة استشارية مستهدفة للتصدير!" : "No target consultant schedules found for export!",
+                IsArabic ? "تنبيه" : "Warning",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        var sourceFiles = IngestedFiles
+            .Where(f => f.Role != BoqFileRole.ConsultantTarget && File.Exists(f.FilePath))
+            .Select(f => f.FilePath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (sourceFiles.Count == 0 && File.Exists(FileAPath))
+        {
+            sourceFiles.Add(FileAPath);
+        }
+
+        if (sourceFiles.Count == 0)
+        {
+            MessageBox.Show(
+                IsArabic ? "يرجى تحديد ملف المقاول (File A) أولاً!" : "Please select Contractor Pricing File (File A) first!",
+                IsArabic ? "تنبيه" : "Warning",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        // Determine destination paths in fixed export folder beside executable
+        string exportRoot = GetDefaultExportDirectory();
+        string projectPrefix = !string.IsNullOrWhiteSpace(InvoiceOrProjectName) 
+            ? InvoiceOrProjectName 
+            : Path.GetFileNameWithoutExtension(targetFiles[0].FilePath);
+        string timeStamp = DateTime.Now.ToString("yyyyMMdd_HHmm");
+        string runFolderName = $"{projectPrefix}_All_Reconciled_Packages_{timeStamp}";
+
+        // Dedicated permanent run directory beside the application
+        string targetExportFolder = Path.Combine(exportRoot, runFolderName);
+        Directory.CreateDirectory(targetExportFolder);
+
+        // Determine destination ZIP file path
+        if (string.IsNullOrWhiteSpace(ZipOutputFilePath) || ZipOutputFilePath.Contains(Environment.GetFolderPath(Environment.SpecialFolder.Desktop)))
+        {
+            ZipOutputFilePath = Path.Combine(exportRoot, $"{runFolderName}.zip");
+        }
+
+        string zipDir = Path.GetDirectoryName(ZipOutputFilePath) ?? exportRoot;
+        Directory.CreateDirectory(zipDir);
+
+        _activeOperationCts = new CancellationTokenSource();
+        OnPropertyChanged(nameof(CanCancel));
+
+        try
+        {
+            var ct = _activeOperationCts.Token;
+            IsLoading = true;
+            ProgressPercentage = 5;
+            StatusMessage = IsArabic 
+                ? $"جارٍ بدء دمج وتصدير ({targetFiles.Count}) مقايسات استشارية في حزمة ZIP واحدة..." 
+                : $"Starting multi-target ZIP package export for ({targetFiles.Count}) BOQs...";
+
+            // Reconcile and export each target workbook directly into targetExportFolder
+            var allCombinedPairs = new List<BoqMatchedPair>();
+            var exportedWorkbooks = new List<(string TargetName, string OutPath, int Matched, int Total, decimal MatchPct)>();
+
+            for (int i = 0; i < targetFiles.Count; i++)
+            {
+                ct.ThrowIfCancellationRequested();
+                var tFile = targetFiles[i];
+                int currentIdx = i + 1;
+                ProgressPercentage = 10 + (int)((double)currentIdx / targetFiles.Count * 65.0);
+                StatusMessage = IsArabic 
+                    ? $"جارٍ دمج وتسعير المقايسة ({currentIdx}/{targetFiles.Count}): {tFile.FileName}..." 
+                    : $"Merging and pricing BOQ ({currentIdx}/{targetFiles.Count}): {tFile.FileName}...";
+
+                ReconciliationResult tgtResult;
+                if (_targetResultsMap.TryGetValue(tFile.FileName, out var cached))
+                {
+                    tgtResult = cached;
+                }
+                else
+                {
+                    tgtResult = await _service.ReconcileMultiSourceAsync(
+                        sourceFiles,
+                        tFile.FilePath,
+                        Sensitivity,
+                        sheetMappings: null,
+                        columnMappings: (ActiveColumnMapping != null && !ActiveColumnMapping.IsAutoDetected) ? ActiveColumnMapping : null,
+                        ct: ct);
+                    _targetResultsMap[tFile.FileName] = tgtResult;
+                }
+
+                // Auto-approve valid matched pairs
+                foreach (var p in tgtResult.MatchedPairs)
+                {
+                    if (p.InjectedRate.HasValue && !p.IsProvisionalSum && p.Confidence != MatchConfidence.ManualReviewNeeded)
+                    {
+                        p.IsApproved = true;
+                    }
+                }
+
+                allCombinedPairs.AddRange(tgtResult.MatchedPairs);
+
+                string outExcelPath = Path.Combine(targetExportFolder, $"{Path.GetFileNameWithoutExtension(tFile.FilePath)}_Reconciled.xlsx");
+                await _service.ExportPricedScheduleAsync(
+                    tFile.FilePath,
+                    outExcelPath,
+                    tgtResult.MatchedPairs,
+                    sourceFiles[0],
+                    enableDynamicLinking: true,
+                    progress: null,
+                    ct: ct);
+
+                int pricedCount = tgtResult.MatchedPairs.Count(p => (p.InjectedRate.HasValue && p.InjectedRate > 0 && !p.IsProvisionalSum) || (p.IsApproved && p.Confidence != MatchConfidence.Unmatched && !p.IsVariationOrder));
+                int totalCount = tgtResult.MatchedPairs.Count;
+                decimal matchRate = totalCount > 0 ? (decimal)pricedCount / totalCount * 100m : 0m;
+                exportedWorkbooks.Add((tFile.FileName, Path.GetFileName(outExcelPath), pricedCount, totalCount, matchRate));
+            }
+
+            ct.ThrowIfCancellationRequested();
+            ProgressPercentage = 80;
+            StatusMessage = IsArabic ? "جارٍ إنشاء لوحة المؤشرات الشاملة لجميع المقايسات..." : "Creating Master Commercial Dashboard...";
+
+            // Create Master Standalone Commercial Dashboard inside the export folder
+            string dashboardPath = Path.Combine(targetExportFolder, "Master_Executive_Commercial_Dashboard.xlsx");
+            await Task.Run(() =>
+            {
+                ClosedXmlExporter.ExportStandaloneDashboard(dashboardPath, allCombinedPairs, sourceFiles[0]);
+            }, ct);
+
+            // Copy all contractor priced source files directly into targetExportFolder alongside the reconciled files
+            var copiedSourcesList = new List<string>();
+            foreach (var sPath in sourceFiles)
+            {
+                if (File.Exists(sPath))
+                {
+                    string srcCopyName = $"[Source_Priced]_{Path.GetFileName(sPath)}";
+                    string srcCopyDest = Path.Combine(targetExportFolder, srcCopyName);
+                    try
+                    {
+                        File.Copy(sPath, srcCopyDest, overwrite: true);
+                        copiedSourcesList.Add(srcCopyName);
+                    }
+                    catch { /* non-fatal */ }
+                }
+            }
+
+            // Create Technical Audit & Summary Report file inside the export folder
+            string reportPath = Path.Combine(targetExportFolder, "Reconciliation_Audit_Summary.txt");
+            var sbReport = new System.Text.StringBuilder();
+            sbReport.AppendLine("==========================================================================");
+            sbReport.AppendLine("           SMARTBOQ ENTERPRISE - BATCH RECONCILIATION SUMMARY             ");
+            sbReport.AppendLine("==========================================================================");
+            sbReport.AppendLine($"Export Date: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sbReport.AppendLine($"Export Directory: {targetExportFolder}");
+            sbReport.AppendLine($"Total Consultant Schedules: {targetFiles.Count}");
+            sbReport.AppendLine($"Total Line Items: {allCombinedPairs.Count:N0}");
+            sbReport.AppendLine($"Total Priced Items: {allCombinedPairs.Count(p => (p.InjectedRate > 0 && !p.IsProvisionalSum) || (p.IsApproved && p.Confidence != MatchConfidence.Unmatched && !p.IsVariationOrder)):N0}");
+            sbReport.AppendLine();
+            sbReport.AppendLine("PRICING SOURCE FILES (Copied to this folder for direct audit & comparison):");
+            foreach (var s in sourceFiles) sbReport.AppendLine($" • [Source_Priced]_{Path.GetFileName(s)} (Original: {s})");
+            sbReport.AppendLine();
+            sbReport.AppendLine("SCHEDULES BREAKDOWN:");
+            foreach (var w in exportedWorkbooks)
+            {
+                sbReport.AppendLine($" • {w.TargetName} -> {w.OutPath} | {w.Matched}/{w.Total} items priced ({w.MatchPct:F1}%)");
+            }
+            sbReport.AppendLine("==========================================================================");
+            File.WriteAllText(reportPath, sbReport.ToString(), System.Text.Encoding.UTF8);
+
+            ct.ThrowIfCancellationRequested();
+            ProgressPercentage = 90;
+            StatusMessage = IsArabic ? "جارٍ ضغط وأرشفة كافة الملفات في حزمة ZIP واحدة..." : "Compressing all files into single ZIP archive...";
+
+            // Ensure destination zip file is ready
+            if (File.Exists(ZipOutputFilePath))
+            {
+                File.Delete(ZipOutputFilePath);
+            }
+
+            // Create ZIP archive containing all reconciled files, copied source files, and reports
+            await Task.Run(() =>
+            {
+                ZipFile.CreateFromDirectory(targetExportFolder, ZipOutputFilePath, CompressionLevel.Optimal, includeBaseDirectory: false);
+            }, ct);
+
+            ProgressPercentage = 100;
+            LastExportedZipPath = ZipOutputFilePath;
+            LastExportedFolder = targetExportFolder;
+            IsZipExported = true;
+            IsExported = true;
+
+            var sbSuccess = new System.Text.StringBuilder();
+            sbSuccess.AppendLine(IsArabic 
+                ? $"تم بنجاح دمج وتصدير كافة المقايسات ({targetFiles.Count} مقايسة) وحفظها في المجلد الثابت بجانب البرنامج!" 
+                : $"Successfully merged and exported all ({targetFiles.Count}) BOQs into the fixed export directory!");
+            sbSuccess.AppendLine();
+            sbSuccess.AppendLine(IsArabic ? $"مجلد الإخراج الثابت:" : "Output Folder:");
+            sbSuccess.AppendLine(targetExportFolder);
+            sbSuccess.AppendLine();
+            sbSuccess.AppendLine(IsArabic ? $"ملف الأرشيف المضغوط (ZIP):" : "ZIP Archive Path:");
+            sbSuccess.AppendLine(ZipOutputFilePath);
+            sbSuccess.AppendLine();
+            sbSuccess.AppendLine(IsArabic ? "محتويات المجلد والأرشيف:" : "Folder & Archive Contents:");
+            sbSuccess.AppendLine(IsArabic 
+                ? $"• ({targetFiles.Count}) ملفات مقايسات إكسيل مسعرة بالكامل بنسبة 100% حفاظ على المعادلات." 
+                : $"• ({targetFiles.Count}) fully priced consultant Excel workbooks.");
+            sbSuccess.AppendLine(IsArabic 
+                ? $"• ({sourceFiles.Count}) ملفات الأسعار الأصلية المسحوب منها الفئات ([Source_Priced]) للمقارنة الفورية." 
+                : $"• ({sourceFiles.Count}) source priced workbooks copied for direct side-by-side comparison.");
+            sbSuccess.AppendLine(IsArabic 
+                ? "• ملف لوحة المؤشرات الشاملة (Master_Executive_Commercial_Dashboard.xlsx)." 
+                : "• Master Executive Commercial Dashboard.");
+            sbSuccess.AppendLine(IsArabic 
+                ? "• تقرير الفحص والتدقيق الفني الشامل (Reconciliation_Audit_Summary.txt)." 
+                : "• Technical audit summary text report.");
+
+            StatusMessage = IsArabic 
+                ? $"تم إنشاء مجلد التصدير وحزمة ZIP المجمعة بنجاح ({targetFiles.Count} مقايسة)." 
+                : $"Unified export folder and ZIP package created successfully ({targetFiles.Count} BOQs).";
+
+            var resultMsg = MessageBox.Show(
+                sbSuccess.ToString() + "\n\n" + (IsArabic ? "هل ترغب في فتح مجلد التصدير الآن لمراجعة ومقارنة الملفات؟" : "Would you like to open the export folder now to compare and review files?"),
+                IsArabic ? "اكتمل دمج وتصدير الحزمة الشاملة" : "Batch ZIP Export Complete",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+
+            if (resultMsg == MessageBoxResult.Yes)
+            {
+                OpenOutputFolder();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = IsArabic ? "تم إلغاء عملية التصدير المضغوطة." : "ZIP export cancelled.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"خطأ في تصدير ZIP: {ex.Message}";
+            MessageBox.Show(ex.Message, IsArabic ? "خطأ في تصدير ZIP" : "ZIP Export Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            _activeOperationCts?.Dispose();
+            _activeOperationCts = null;
+            OnPropertyChanged(nameof(CanCancel));
+            IsLoading = false;
+        }
+    }
+
     private async Task ExecuteExportAsync()
     {
+        // If user is currently on the aggregated "All Target BOQs" view with multiple targets, prompt for ZIP package
+        if (HasMultipleTargets && (SelectedTargetFilter == null || SelectedTargetFilter.StartsWith("جميع المقايسات") || SelectedTargetFilter.StartsWith("All Target")))
+        {
+            var zipChoice = MessageBox.Show(
+                IsArabic
+                    ? "أنت تعرض حالياً كافة المقايسات المستهدفة مجمعة.\n\nهل ترغب في دمج وتصدير جميع المقايسات في حزمة مضغوطة واحدة (ZIP Archive)؟\n\n• اضغط (Yes / نعم): لتصدير كافة المقايسات في ملف مضغوط ZIP مجمع شامل الداشبورد والتقارير.\n• اضغط (No / لا): لتصدير المقايسة المحددة حالياً فقط كملف Excel منفرد.\n• اضغط (Cancel / إلغاء): لإلغاء العملية."
+                    : "You are currently viewing all target schedules.\n\nWould you like to export all schedules into a unified ZIP archive?\n\n• Click Yes: Export into a single ZIP archive.\n• Click No: Export only the active schedule as a single Excel file.\n• Click Cancel: Abort.",
+                IsArabic ? "خيارات التصدير الشامل" : "Consolidated Export Options",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Question);
+
+            if (zipChoice == MessageBoxResult.Cancel) return;
+            if (zipChoice == MessageBoxResult.Yes)
+            {
+                await ExecuteExportAllZipAsync();
+                return;
+            }
+        }
+
         if (Result == null || MatchedPairs.Count == 0)
         {
             if (!File.Exists(FileAPath) || !File.Exists(FileBPath))
@@ -1134,12 +1840,13 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             UpdateDefaultOutputPath();
             if (string.IsNullOrWhiteSpace(OutputFilePath))
             {
-                string dir = Path.GetDirectoryName(FileBPath) ?? Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                string dir = GetDefaultExportDirectory();
                 string baseName = Path.GetFileNameWithoutExtension(FileBPath);
                 OutputFilePath = Path.Combine(dir, $"{baseName}_Reconciled.xlsx");
             }
 
-            string outDir = Path.GetDirectoryName(OutputFilePath) ?? Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+            string outDir = Path.GetDirectoryName(OutputFilePath) ?? GetDefaultExportDirectory();
+            Directory.CreateDirectory(outDir);
             string baseNameB = !string.IsNullOrWhiteSpace(FileBPath) ? Path.GetFileNameWithoutExtension(FileBPath) : "BOQ_Project";
             string dashboardPath = Path.Combine(outDir, $"{baseNameB}_Executive_Dashboard.xlsx");
             DashboardFilePath = dashboardPath;
@@ -1251,6 +1958,34 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             }
             catch { }
 
+            // Copy contractor priced source file(s) alongside the output file so user can directly compare
+            var sourcePaths = IngestedFiles
+                .Where(f => f.Role != BoqFileRole.ConsultantTarget && File.Exists(f.FilePath))
+                .Select(f => f.FilePath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (sourcePaths.Count == 0 && !string.IsNullOrWhiteSpace(FileAPath) && File.Exists(FileAPath))
+            {
+                sourcePaths.Add(FileAPath);
+            }
+
+            var copiedSources = new List<string>();
+            foreach (var srcPath in sourcePaths)
+            {
+                try
+                {
+                    string srcName = Path.GetFileName(srcPath);
+                    string copyDest = Path.Combine(outDir, $"[Source_Priced]_{srcName}");
+                    if (!string.Equals(srcPath, copyDest, StringComparison.OrdinalIgnoreCase))
+                    {
+                        File.Copy(srcPath, copyDest, overwrite: true);
+                        copiedSources.Add(Path.GetFileName(copyDest));
+                    }
+                }
+                catch { /* non-fatal */ }
+            }
+
             ProgressPercentage = 100;
             IsExported = true;
             LastExportedSchedulePath = OutputFilePath;
@@ -1265,15 +2000,22 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 ? $"\n3. تقرير التشخيص الذكي (Log):\n{diagLogPath}\n"
                 : string.Empty;
 
+            string sourcesHint = copiedSources.Count > 0
+                ? (IsArabic ? $"\n4. ملفات الأسعار الأصلية (تم نسخها للمقارنة المباشرة):\n{string.Join("\n", copiedSources.Select(p => $" • {p}"))}\n"
+                            : $"\n4. Source Priced Files (Copied alongside for comparison):\n{string.Join("\n", copiedSources.Select(p => $" • {p}"))}\n")
+                : string.Empty;
+
             // Prompt user with options to open files
             string msg = IsArabic
                 ? $"تم الدمج والتصدير بنجاح!\n\n" +
                   $"1. ملف المقايسة المدمج:\n{OutputFilePath}\n" +
                   $"(يتضمن أوراق العمل المسعرة + سجل التدقيق Audit_Report + خريطة ربط الأسعار Pricing_Linkage_Map)\n\n" +
                   $"2. لوحة مؤشرات الإدارة (Dashboard):\n{dashboardPath}\n" +
+                  sourcesHint +
                   logHint +
                   $"\nهل تريد فتح ملف المقايسة المسعر الآن في Excel؟"
                 : $"Export completed successfully!\n\nReconciled Schedule:\n{OutputFilePath}\n\nExecutive Dashboard:\n{dashboardPath}\n" +
+                  sourcesHint +
                   logHint +
                   $"\nDo you want to open the reconciled file now in Excel?";
 
@@ -1385,6 +2127,11 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
         string dir = !string.IsNullOrWhiteSpace(LastExportedFolder) && Directory.Exists(LastExportedFolder)
             ? LastExportedFolder
             : (!string.IsNullOrWhiteSpace(OutputFilePath) ? Path.GetDirectoryName(OutputFilePath) ?? "" : "");
+
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+        {
+            dir = GetDefaultExportDirectory();
+        }
 
         if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
         {

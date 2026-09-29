@@ -67,6 +67,30 @@ public abstract class BaseItemMatcher : IItemMatcher
     }
 
     /// <summary>
+    /// Computes token coverage ratio: |A ∩ B| / min(|A|, |B|).
+    /// Indicates what percentage of the shorter text's keywords appear in the longer text.
+    /// </summary>
+    protected static double CalculateTokenCoverage(ReadOnlySpan<ulong> a, ReadOnlySpan<ulong> b)
+    {
+        if (a.IsEmpty || b.IsEmpty) return 0.0;
+        int i = 0, j = 0;
+        int intersection = 0;
+        while (i < a.Length && j < b.Length)
+        {
+            if (a[i] == b[j])
+            {
+                intersection++;
+                i++;
+                j++;
+            }
+            else if (a[i] < b[j]) i++;
+            else j++;
+        }
+        int minLen = Math.Min(a.Length, b.Length);
+        return minLen > 0 ? (double)intersection / minLen : 0.0;
+    }
+
+    /// <summary>
     /// Tokenizes a text block into a distinct set of significant keywords (length > 2).
     /// </summary>
     protected static HashSet<string> Tokenize(string text)

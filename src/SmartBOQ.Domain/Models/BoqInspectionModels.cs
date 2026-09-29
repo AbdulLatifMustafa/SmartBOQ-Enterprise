@@ -18,6 +18,12 @@ public sealed record BoqFileInfo
     };
 
     public BoqFileRole Role { get; set; } = BoqFileRole.ContractorPriced;
+    public BoqFileRole DetectedRole { get; init; } = BoqFileRole.ConsultantTarget;
+    public bool HasPricedRates { get; init; }
+    public int PricedItemsCount { get; init; }
+    public int SampledItemsCount { get; init; }
+    public double PricingCompletenessRatio => SampledItemsCount > 0 ? (double)PricedItemsCount / SampledItemsCount : 0.0;
+    public bool HasTenderMetadata { get; init; }
     public int SheetsCount { get; init; }
     public int TotalEstimatedItems { get; init; }
     public string DetectedCurrency { get; init; } = "EGP";
@@ -28,24 +34,24 @@ public sealed record BoqFileInfo
     public string RoleBadgeText => Role switch
     {
         BoqFileRole.ContractorPriced => "ملف المقاول المسعر (Source)",
-        BoqFileRole.ConsultantTarget => "جدول الاستشاري المستهدف (Target)",
+        BoqFileRole.ConsultantTarget => HasPricedRates ? "جدول الاستشاري المستهدف (Target)" : "جدول استشاري غير مسعر (Target)",
         BoqFileRole.SupplementaryRates => "ملف أسعار إضافي / موردين (Rates)",
         _ => "ملف مرجعي"
     };
 
     public string RoleBadgeColor => Role switch
     {
-        BoqFileRole.ContractorPriced => "#CCD0D9",
-        BoqFileRole.ConsultantTarget => "#CCD0D9",
-        BoqFileRole.SupplementaryRates => "#D4954A",
+        BoqFileRole.ContractorPriced => "#34D399",
+        BoqFileRole.ConsultantTarget => HasPricedRates ? "#60A5FA" : "#93C5FD",
+        BoqFileRole.SupplementaryRates => "#FBBF24",
         _ => "#888E9B"
     };
 
     public string RoleBadgeBackground => Role switch
     {
-        BoqFileRole.ContractorPriced => "#282C37",
-        BoqFileRole.ConsultantTarget => "#252B35",
-        BoqFileRole.SupplementaryRates => "#2D261E",
+        BoqFileRole.ContractorPriced => "#132D23",
+        BoqFileRole.ConsultantTarget => "#17253D",
+        BoqFileRole.SupplementaryRates => "#2D2618",
         _ => "#20222A"
     };
 }

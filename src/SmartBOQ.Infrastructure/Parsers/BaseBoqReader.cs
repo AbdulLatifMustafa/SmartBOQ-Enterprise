@@ -55,7 +55,43 @@ public abstract class BaseBoqReader : IBoqReader
         }
         return trimmed.Contains("Summary", StringComparison.OrdinalIgnoreCase) ||
                trimmed.Contains("Preamble", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("QTY Notes", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Equals("Notes", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Equals("Note", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.Contains("ملاحظات", StringComparison.OrdinalIgnoreCase) ||
                trimmed.Contains("ملخص", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Checks if a row represents document/project cover metadata rather than a pricing BOQ line item.
+    /// </summary>
+    protected static bool IsMetadataRow(string code, string text)
+    {
+        if (string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(text)) return false;
+        string c = code?.Trim() ?? string.Empty;
+        string t = text?.Trim() ?? string.Empty;
+
+        return c.Equals("Employer", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Project", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Tender No.", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Tender No", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Tender Title", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("BoQ Description", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Tenderer Name", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Vendor", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Client", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Owner", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Consultant", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Contractor", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("Date", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("المالك", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("المشروع", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("الاستشاري", StringComparison.OrdinalIgnoreCase) ||
+               c.Equals("المقاول", StringComparison.OrdinalIgnoreCase) ||
+               t.StartsWith("Employer", StringComparison.OrdinalIgnoreCase) ||
+               t.StartsWith("Project: City Gate", StringComparison.OrdinalIgnoreCase) ||
+               t.StartsWith("City Gate Project", StringComparison.OrdinalIgnoreCase) ||
+               t.StartsWith("Tender No", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

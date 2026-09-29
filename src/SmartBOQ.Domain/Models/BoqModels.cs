@@ -56,7 +56,7 @@ public sealed record BoqMatchedPair
     /// Indicates whether this item represents an unpriced new scope / Variation Order.
     /// </summary>
     public bool IsVariationOrder => TargetItem.Type == BoqItemType.VariationOrder || 
-                                   (MatchedSourceItem == null && TargetItem.Type == BoqItemType.Normal);
+                                   (MatchedSourceItem == null && !InjectedRate.HasValue && TargetItem.Type == BoqItemType.Normal);
 
     /// <summary>
     /// Indicates whether this item is a contractually shielded Provisional Sum.

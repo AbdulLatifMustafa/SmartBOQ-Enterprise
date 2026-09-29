@@ -26,7 +26,7 @@ public sealed class BoqInspectorService : IBoqInspector
         "PRICING_LINKAGE", "LINKAGE"
     ];
 
-    public async Task<BoqFileInfo> InspectWorkbookAsync(string filePath, BoqFileRole role = BoqFileRole.ContractorPriced, CancellationToken ct = default)
+    public async Task<BoqFileInfo> InspectWorkbookAsync(string filePath, BoqFileRole? preferredRole = null, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         if (!File.Exists(filePath))
@@ -41,172 +41,199 @@ public sealed class BoqInspectorService : IBoqInspector
             var columnHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int totalEstimatedItems = 0;
             string detectedCurrency = "EGP";
+            int totalPricedRows = 0;
+            int totalSampledDataRows = 0;
+            bool hasTenderMetadata = false;
 
             using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan);
             using var reader = ExcelReaderFactory.CreateReader(stream);
 
-            if (reader.ResultsCount == 1)
+            do
             {
-                // Single-sheet flat BOQ schedule: resolve schema dynamically using AI semantic resolver
-                var resolvedCols = SemanticColumnResolver.ResolveColumns(reader, maxScanRows: 30);
-                detectedCurrency = resolvedCols.DetectedCurrency;
-
-                // Reset stream to re-scan for distinct Bill partitions
-                stream.Seek(0, SeekOrigin.Begin);
-                using var flatReader = ExcelReaderFactory.CreateReader(stream);
-
-                var billRowCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                var billStartRows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-                int colBill = resolvedCols.BillColumn;
-                int rowIdx = 0;
-                string physicalName = string.IsNullOrWhiteSpace(flatReader.Name) ? "Sheet1" : flatReader.Name.Trim();
-
-                while (flatReader.Read())
+                ct.ThrowIfCancellationRequested();
+                string sheetName = string.IsNullOrWhiteSpace(reader.Name) ? "Sheet1" : reader.Name.Trim();
+                if (reader.ResultsCount > 1 && IsNonBillSheet(sheetName))
                 {
-                    ct.ThrowIfCancellationRequested();
-                    rowIdx++;
-
-                    if (rowIdx <= resolvedCols.HeaderRowIndex)
-                    {
-                        for (int c = 0; c < flatReader.FieldCount; c++)
-                        {
-                            var h = flatReader.GetValue(c)?.ToString()?.Trim();
-                            if (!string.IsNullOrWhiteSpace(h)) columnHeaders.Add(h);
-                        }
-                        continue;
-                    }
-
-                    string billVal = colBill >= 0 ? (flatReader.GetValue(colBill)?.ToString()?.Trim() ?? string.Empty) : string.Empty;
-                    if (!string.IsNullOrWhiteSpace(billVal))
-                    {
-                        billRowCounts[billVal] = billRowCounts.GetValueOrDefault(billVal) + 1;
-                        if (!billStartRows.ContainsKey(billVal))
-                        {
-                            billStartRows[billVal] = rowIdx;
-                        }
-                        totalEstimatedItems++;
-                    }
-                }
-
-                if (billRowCounts.Count > 0)
-                {
-                    foreach (var (billName, count) in billRowCounts)
-                    {
-                        sheetSummaries.Add(new BoqSheetSummary
-                        {
-                            SheetName = billName,
-                            BillCode = ExtractBillCode(billName),
-                            EstimatedRows = count,
-                            StartRowIndex = billStartRows.GetValueOrDefault(billName, 1),
-                            IsProvisionalSum = billName.Equals("Bill 6 Provisional Sum", StringComparison.OrdinalIgnoreCase) ||
-                                             billName.StartsWith("Bill 6 Provisional", StringComparison.OrdinalIgnoreCase) ||
-                                             billName.Contains("Provisional Sum", StringComparison.OrdinalIgnoreCase) || 
-                                             billName.Contains("مبلغ احتياطي", StringComparison.OrdinalIgnoreCase) || 
-                                             billName.Contains("مبالغ احتياطية", StringComparison.OrdinalIgnoreCase),
-                            IsNonBillSheet = false,
-                            DetectedCurrency = detectedCurrency,
-                            SourceFileName = fileInfo.Name
-                        });
-                    }
-                }
-                else
-                {
-                    sheetSummaries.Add(new BoqSheetSummary
-                    {
-                        SheetName = physicalName,
-                        BillCode = ExtractBillCode(physicalName),
-                        EstimatedRows = Math.Max(0, rowIdx - resolvedCols.HeaderRowIndex),
-                        IsProvisionalSum = false,
-                        IsNonBillSheet = false,
-                        DetectedCurrency = detectedCurrency,
-                        SourceFileName = fileInfo.Name
-                    });
-                    totalEstimatedItems = Math.Max(0, rowIdx - resolvedCols.HeaderRowIndex);
-                }
-            }
-            else
-            {
-                // Multi-sheet workbook: iterate each sheet
-                do
-                {
-                    ct.ThrowIfCancellationRequested();
-                    string sheetName = reader.Name?.Trim() ?? string.Empty;
-                    if (string.IsNullOrWhiteSpace(sheetName)) continue;
-
-                    bool isNonBill = IsNonBillSheet(sheetName);
-                    bool isPsSheet = sheetName.Equals("Bill 6 Provisional Sum", StringComparison.OrdinalIgnoreCase) ||
-                                     sheetName.StartsWith("Bill 6 Provisional", StringComparison.OrdinalIgnoreCase) ||
-                                     sheetName.Contains("Provisional Sum", StringComparison.OrdinalIgnoreCase) ||
-                                     sheetName.Contains("مبلغ احتياطي", StringComparison.OrdinalIgnoreCase) ||
-                                     sheetName.Contains("مبالغ احتياطية", StringComparison.OrdinalIgnoreCase);
-
-                    int sheetRows = 0;
-                    int rowLimit = 60; // Scan up to 60 rows for quick estimation
-                    int scannedRows = 0;
-
-                    while (reader.Read())
-                    {
-                        scannedRows++;
-                        bool hasData = false;
-
-                        for (int c = 0; c < reader.FieldCount; c++)
-                        {
-                            var cellVal = reader.GetValue(c)?.ToString()?.Trim();
-                            if (string.IsNullOrWhiteSpace(cellVal)) continue;
-
-                            hasData = true;
-
-                            // Header detection in the first 5 rows
-                            if (scannedRows <= 5 && cellVal.Length <= 40)
-                            {
-                                columnHeaders.Add(cellVal);
-                            }
-
-                            if (cellVal.Contains("USD", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("($)"))
-                            {
-                                detectedCurrency = "USD";
-                            }
-                            else if (cellVal.Contains("EUR", StringComparison.OrdinalIgnoreCase) || cellVal.Contains("(€)"))
-                            {
-                                detectedCurrency = "EUR";
-                            }
-                        }
-
-                        if (hasData) sheetRows++;
-                        if (scannedRows >= rowLimit) break;
-                    }
-
-                    // If scanned full rows or reached limit, estimate full sheet count
-                    int estimatedCount = isNonBill ? 0 : (scannedRows >= rowLimit ? Math.Max(sheetRows * 5, 120) : sheetRows);
-                    totalEstimatedItems += estimatedCount;
-
                     sheetSummaries.Add(new BoqSheetSummary
                     {
                         SheetName = sheetName,
                         BillCode = ExtractBillCode(sheetName),
-                        EstimatedRows = estimatedCount,
-                        IsProvisionalSum = isPsSheet,
-                        IsNonBillSheet = isNonBill,
+                        EstimatedRows = 0,
+                        IsProvisionalSum = false,
+                        IsNonBillSheet = true,
                         DetectedCurrency = detectedCurrency,
                         SourceFileName = fileInfo.Name
                     });
+                    continue;
+                }
 
-                } while (reader.NextResult());
-            }
+                bool isPsSheet = sheetName.Equals("Bill 6 Provisional Sum", StringComparison.OrdinalIgnoreCase) ||
+                                 sheetName.StartsWith("Bill 6 Provisional", StringComparison.OrdinalIgnoreCase) ||
+                                 sheetName.Contains("Provisional Sum", StringComparison.OrdinalIgnoreCase) ||
+                                 sheetName.Contains("مبلغ احتياطي", StringComparison.OrdinalIgnoreCase) ||
+                                 sheetName.Contains("مبالغ احتياطية", StringComparison.OrdinalIgnoreCase);
 
+                // Buffer the first 40 rows of this sheet
+                var buffer = new List<string[]>(40);
+                var rawBuffer = new List<object?[]>(40);
+                int rowsBuffered = 0;
+
+                while (rowsBuffered < 40 && reader.Read())
+                {
+                    rowsBuffered++;
+                    int fieldCount = reader.FieldCount;
+                    var strVals = new string[fieldCount];
+                    var rawVals = new object?[fieldCount];
+                    for (int c = 0; c < fieldCount; c++)
+                    {
+                        rawVals[c] = reader.GetValue(c);
+                        strVals[c] = rawVals[c]?.ToString()?.Trim() ?? string.Empty;
+                    }
+                    buffer.Add(strVals);
+                    rawBuffer.Add(rawVals);
+                }
+
+                if (buffer.Count == 0) continue;
+
+                if (SemanticColumnResolver.IsPivotOrSummarySheet(buffer))
+                {
+                    sheetSummaries.Add(new BoqSheetSummary
+                    {
+                        SheetName = sheetName,
+                        BillCode = ExtractBillCode(sheetName),
+                        EstimatedRows = 0,
+                        IsProvisionalSum = false,
+                        IsNonBillSheet = true,
+                        DetectedCurrency = detectedCurrency,
+                        SourceFileName = fileInfo.Name
+                    });
+                    continue;
+                }
+
+                var resolvedCols = SemanticColumnResolver.ResolveColumnsFromRows(buffer, buffer[0].Length);
+                if (resolvedCols.HasDetectedHeaders && resolvedCols.HeaderRowIndex > 0 && resolvedCols.HeaderRowIndex <= buffer.Count)
+                {
+                    var hRow = buffer[resolvedCols.HeaderRowIndex - 1];
+                    for (int c = 0; c < hRow.Length; c++)
+                    {
+                        string h = hRow[c];
+                        if (!string.IsNullOrWhiteSpace(h) && h.Length <= 40)
+                        {
+                            columnHeaders.Add(h);
+                        }
+                    }
+                }
+                if (!string.IsNullOrWhiteSpace(resolvedCols.DetectedCurrency) && resolvedCols.DetectedCurrency != "EGP")
+                {
+                    detectedCurrency = resolvedCols.DetectedCurrency;
+                }
+
+                // Check pre-header rows for tender metadata (Employer, Tender No, Project, Engineer, Consultant)
+                int headerZeroIdx = Math.Max(0, resolvedCols.HeaderRowIndex - 1);
+                for (int r = 0; r < Math.Min(headerZeroIdx, buffer.Count); r++)
+                {
+                    for (int c = 0; c < buffer[r].Length; c++)
+                    {
+                        string val = buffer[r][c];
+                        if (string.IsNullOrWhiteSpace(val)) continue;
+                        if (val.Contains("Employer", StringComparison.OrdinalIgnoreCase) ||
+                            val.Contains("Tender No", StringComparison.OrdinalIgnoreCase) ||
+                            val.Contains("Tender Title", StringComparison.OrdinalIgnoreCase) ||
+                            val.Contains("Project", StringComparison.OrdinalIgnoreCase) ||
+                            val.Contains("Engineer", StringComparison.OrdinalIgnoreCase) ||
+                            val.Contains("Consultant", StringComparison.OrdinalIgnoreCase) ||
+                            val.Contains("Owner", StringComparison.OrdinalIgnoreCase) ||
+                            val.Contains("Client", StringComparison.OrdinalIgnoreCase) ||
+                            val.Contains("المالك", StringComparison.OrdinalIgnoreCase) ||
+                            val.Contains("الاستشاري", StringComparison.OrdinalIgnoreCase) ||
+                            val.Contains("المناقصة", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasTenderMetadata = true;
+                            break;
+                        }
+                    }
+                    if (hasTenderMetadata) break;
+                }
+
+                // Inspect buffered data rows for priced rates
+                int rateCol = resolvedCols.RateColumn;
+                int amtCol = resolvedCols.TotalAmountColumn;
+                int descCol = resolvedCols.DescriptionColumn;
+                int qtyCol = resolvedCols.QuantityColumn;
+
+                for (int r = resolvedCols.HeaderRowIndex; r < buffer.Count; r++)
+                {
+                    string desc = descCol >= 0 && descCol < buffer[r].Length ? buffer[r][descCol] : string.Empty;
+                    string qtyStr = qtyCol >= 0 && qtyCol < buffer[r].Length ? buffer[r][qtyCol] : string.Empty;
+
+                    // Skip metadata or empty rows
+                    if (string.IsNullOrWhiteSpace(desc) && string.IsNullOrWhiteSpace(qtyStr)) continue;
+
+                    totalSampledDataRows++;
+
+                    if (rateCol >= 0 && rateCol < rawBuffer[r].Length)
+                    {
+                        var rawVal = rawBuffer[r][rateCol];
+                        if (TryParsePositiveDecimal(rawVal, out decimal rate) && rate > 0.0001m)
+                        {
+                            totalPricedRows++;
+                        }
+                    }
+                    else if (amtCol >= 0 && amtCol < rawBuffer[r].Length)
+                    {
+                        var rawVal = rawBuffer[r][amtCol];
+                        if (TryParsePositiveDecimal(rawVal, out decimal amt) && amt > 0.0001m)
+                        {
+                            totalPricedRows++;
+                        }
+                    }
+                }
+
+                // Read remaining rows of this sheet for total estimated count
+                int remainingRows = 0;
+                while (reader.Read())
+                {
+                    remainingRows++;
+                }
+                int totalSheetRows = buffer.Count + remainingRows;
+                int estimatedDataRows = Math.Max(0, totalSheetRows - resolvedCols.HeaderRowIndex);
+                totalEstimatedItems += estimatedDataRows;
+
+                sheetSummaries.Add(new BoqSheetSummary
+                {
+                    SheetName = sheetName,
+                    BillCode = ExtractBillCode(sheetName),
+                    EstimatedRows = estimatedDataRows,
+                    StartRowIndex = resolvedCols.HeaderRowIndex + 1,
+                    IsProvisionalSum = isPsSheet,
+                    IsNonBillSheet = false,
+                    DetectedCurrency = detectedCurrency,
+                    SourceFileName = fileInfo.Name
+                });
+
+            } while (reader.NextResult());
+
+            bool hasPricedRates = totalPricedRows > 0;
+            var detectedRole = InferRole(fileInfo.Name, hasPricedRates, totalPricedRows, totalSampledDataRows, hasTenderMetadata, sheetSummaries.Count);
+            var finalRole = preferredRole ?? detectedRole;
 
             return new BoqFileInfo
             {
                 FilePath = filePath,
                 FileName = fileInfo.Name,
                 FileSizeBytes = fileInfo.Length,
-                Role = role,
+                Role = finalRole,
+                DetectedRole = detectedRole,
+                HasPricedRates = hasPricedRates,
+                PricedItemsCount = totalPricedRows,
+                SampledItemsCount = totalSampledDataRows,
+                HasTenderMetadata = hasTenderMetadata,
                 SheetsCount = sheetSummaries.Count,
                 TotalEstimatedItems = totalEstimatedItems,
                 DetectedCurrency = detectedCurrency,
                 Sheets = sheetSummaries,
                 AvailableColumns = columnHeaders.OrderBy(c => c).ToList(),
-                IsPrimary = role == BoqFileRole.ConsultantTarget || role == BoqFileRole.ContractorPriced
+                IsPrimary = finalRole == BoqFileRole.ConsultantTarget || finalRole == BoqFileRole.ContractorPriced
             };
         }, ct);
     }
@@ -373,6 +400,21 @@ public sealed class BoqInspectorService : IBoqInspector
                 {
                     using var stream = new FileStream(sourceFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 32768, FileOptions.SequentialScan);
                     using var reader = ExcelReaderFactory.CreateReader(stream);
+
+                    // Advance to first work bill sheet with detailed line items
+                    do
+                    {
+                        string sName = reader.Name?.Trim() ?? string.Empty;
+                        bool isSummaryOrPrelim = sName.Contains("Sum", StringComparison.OrdinalIgnoreCase) ||
+                                                 sName.Contains("General", StringComparison.OrdinalIgnoreCase) ||
+                                                 sName.Contains("Requirements", StringComparison.OrdinalIgnoreCase);
+
+                        if (!IsNonBillSheet(sName) && !isSummaryOrPrelim)
+                        {
+                            break;
+                        }
+                    } while (reader.NextResult());
+
                     var srcCols = SemanticColumnResolver.ResolveColumns(reader, maxScanRows: 35);
 
                     if (srcCols.RateColumn >= 0) mapping.SourceRateColumn = srcCols.RateColumn;
@@ -449,6 +491,9 @@ public sealed class BoqInspectorService : IBoqInspector
             trimmed.Contains("Preamble", StringComparison.OrdinalIgnoreCase) ||
             trimmed.Contains("Cover", StringComparison.OrdinalIgnoreCase) ||
             trimmed.Contains("General Notes", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Contains("Notes", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Equals("Note", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.Contains("ملاحظات", StringComparison.OrdinalIgnoreCase) ||
             trimmed.Contains("TOC", StringComparison.OrdinalIgnoreCase) ||
             trimmed.Contains("فهرس", StringComparison.OrdinalIgnoreCase) ||
             trimmed.Contains("غلاف", StringComparison.OrdinalIgnoreCase) ||
@@ -538,5 +583,135 @@ public sealed class BoqInspectorService : IBoqInspector
         }
         int union = tokensA.Count + tokensB.Count - intersection;
         return union == 0 ? 0.0 : (double)intersection / union;
+    }
+
+    public static BoqFileRole InferRole(
+        string fileName,
+        bool hasPricedRates,
+        int pricedItemsCount,
+        int sampledItemsCount,
+        bool hasTenderMetadata,
+        int sheetsCount)
+    {
+        // 1. Content Ground Truth: If workbook has 0 priced rows, it CANNOT be a pricing source.
+        // It is strictly an unpriced Consultant Target schedule waiting for rates.
+        if (!hasPricedRates || pricedItemsCount == 0)
+        {
+            return BoqFileRole.ConsultantTarget;
+        }
+
+        string name = fileName.ToLowerInvariant();
+
+        // 2. High-priority Contractor / Pricing signatures:
+        // Keywords like Candy, CCS, Priced, مسعر, تسعير, عرض سعر indicate pricing data source.
+        bool hasExplicitContractorKeyword = name.Contains("candy") ||
+                                            name.Contains("ccs") ||
+                                            name.Contains("priced") ||
+                                            name.Contains("pricing") ||
+                                            name.Contains("selling") ||
+                                            name.Contains("vendor") ||
+                                            name.Contains("supplier") ||
+                                            name.Contains("subcon") ||
+                                            name.Contains("quotation") ||
+                                            name.Contains("offer") ||
+                                            name.Contains("عرض سعر") ||
+                                            name.Contains("تسعير") ||
+                                            name.Contains("مسعر") ||
+                                            name.Contains("مورد") ||
+                                            name.Contains("مقاول");
+
+        if (hasExplicitContractorKeyword && !name.Contains("unpriced") && !name.Contains("غير مسعر"))
+        {
+            return BoqFileRole.ContractorPriced;
+        }
+
+        // 3. Explicit Consultant/Tender keywords in filename or metadata
+        bool hasConsultantKeyword = name.Contains("consultant") ||
+                                    name.Contains("tender") ||
+                                    name.Contains("unpriced") ||
+                                    name.Contains("client") ||
+                                    name.Contains("owner") ||
+                                    name.Contains("employer") ||
+                                    name.Contains("engineer") ||
+                                    name.Contains("طرح") ||
+                                    name.Contains("استشاري") ||
+                                    name.Contains("مناقصة") ||
+                                    name.Contains("غير مسعر") ||
+                                    name.Contains("مالك") ||
+                                    name.Contains("عميل");
+
+        if (hasConsultantKeyword || hasTenderMetadata)
+        {
+            // Tender booklet format or consultant name - even if it contains rates (e.g. Rev_02 budget),
+            // it acts as the primary consultant structure target.
+            return BoqFileRole.ConsultantTarget;
+        }
+
+        // Default for files containing valid positive rates without consultant tokens: Contractor Priced source
+        return BoqFileRole.ContractorPriced;
+    }
+
+    private static bool TryParsePositiveDecimal(object? val, out decimal result)
+    {
+        result = 0m;
+        if (val == null) return false;
+
+        if (val is double d)
+        {
+            if (d > 0.00001 && !double.IsInfinity(d) && !double.IsNaN(d))
+            {
+                result = (decimal)d;
+                return true;
+            }
+            return false;
+        }
+        if (val is decimal dec)
+        {
+            if (dec > 0.00001m)
+            {
+                result = dec;
+                return true;
+            }
+            return false;
+        }
+        if (val is float f)
+        {
+            if (f > 0.00001f && !float.IsInfinity(f) && !float.IsNaN(f))
+            {
+                result = (decimal)f;
+                return true;
+            }
+            return false;
+        }
+        if (val is int i)
+        {
+            if (i > 0)
+            {
+                result = i;
+                return true;
+            }
+            return false;
+        }
+        if (val is long l)
+        {
+            if (l > 0)
+            {
+                result = l;
+                return true;
+            }
+            return false;
+        }
+
+        string str = val.ToString()?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(str)) return false;
+
+        str = str.Replace(",", "").Replace("$", "").Replace("£", "").Replace("€", "").Replace("EGP", "", StringComparison.OrdinalIgnoreCase).Trim();
+        if (decimal.TryParse(str, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var parsed) && parsed > 0.00001m)
+        {
+            result = parsed;
+            return true;
+        }
+
+        return false;
     }
 }
