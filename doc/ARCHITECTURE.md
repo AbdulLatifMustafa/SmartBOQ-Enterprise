@@ -155,4 +155,4 @@ flowchart TD
 | **Financial Accuracy** | Segregated currency buckets with native decimal arithmetic. | **Zero FX blending**; 100% mathematical precision across multi-currency tenders. |
 | **Format Preservation** | Binary OpenXML package cloning; surgical cell value replacement. | **100% font, color, print title, and formula preservation** on consultant templates. |
 | **Data Privacy** | 100% local-first execution; embedded encrypted-capable SQLite. | **Zero cloud latency, zero external network calls**, safe for classified tenders. |
-| **Reliability** | Non-throwing diagnostic logger, OpenXML XML sanitizers, 107 unit tests. | **0 warnings, 0 errors** in Release builds; 100% automated test pass rate. |
+| **Reliability** | Non-throwing diagnostic logger, OpenXML XML sanitizers, 110 unit tests. | **0 warnings, 0 errors** in Release builds; 100% automated test pass rate. |

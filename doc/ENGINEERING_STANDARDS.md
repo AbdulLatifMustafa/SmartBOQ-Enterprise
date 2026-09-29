@@ -101,5 +101,5 @@ To guarantee that any contractor or consultant file can be ingested without cras
 
 Before merging or publishing any code to production:
 1. **0 Warnings & 0 Errors**: Solution must build in `Release` mode with zero compiler warnings.
-2. **100% Automated Test Pass Rate**: All 107 unit, architecture, and engine tests in `SmartBOQ.Tests` must pass.
+2. **100% Automated Test Pass Rate**: All 110 unit, architecture, and engine tests in `SmartBOQ.Tests` must pass.
 3. **Automated XAML Icon Enum Verification**: `AllXamlPackIconLucideKinds_AreValidEnumMembers` test must verify that all Lucide icon names declared in XAML match valid enum members in `MahApps.Metro.IconPacks.Lucide`.

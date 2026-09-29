@@ -4,7 +4,7 @@
 [![C# 13](https://img.shields.io/badge/C%23-13.0-239120?logo=csharp)](https://docs.microsoft.com/en-us/dotnet/csharp/)
 [![WPF](https://img.shields.io/badge/Platform-WPF%20Desktop-0078D6?logo=windows)](https://learn.microsoft.com/en-us/dotnet/desktop/wpf/)
 [![Architecture](https://img.shields.io/badge/Architecture-Clean%20%2F%20Onion-blue)](#architecture)
-[![Tests](https://img.shields.io/badge/Tests-107%20Passed%20(100%25)-success)](./tests)
+[![Tests](https://img.shields.io/badge/Tests-110%20Passed%20(100%25)-success)](./tests)
 [![License](https://img.shields.io/badge/License-Proprietary-red)](#)
 
 > **Enterprise Bill of Quantities (BOQ) Reconciliation & Dynamic Pricing Engine**  
@@ -90,7 +90,7 @@ SmartBOQ.slnx
 │   ├── SmartBOQ.App/             # Modern WPF desktop interface (Decoupled MVVM, Lucide Icons)
 │   └── SmartBOQ.CLI/             # High-speed headless runner and integration test suite
 ├── tests/
-│   └── SmartBOQ.Tests/           # 107 comprehensive unit, architecture, and UI validation tests
+│   └── SmartBOQ.Tests/           # 110 comprehensive unit, architecture, and UI validation tests
 ├── doc/                          # Comprehensive technical AI & architectural documentation
 ├── publish.cmd                   # Windows 1-click publishing launcher
 └── publish.ps1                   # .NET 10 runtime verification & single-file publish automation
@@ -137,7 +137,7 @@ This verifies your system's .NET 10 runtime, bundles a compressed single-file ex
 
 ## Verification & Integrity Test Suite
 
-To run the automated deep verification test suite (107 unit, architecture, and engine tests):
+To run the automated deep verification test suite (110 unit, architecture, and engine tests):
 ```powershell
 dotnet test tests/SmartBOQ.Tests/SmartBOQ.Tests.csproj
 ```
