@@ -1394,38 +1394,48 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
 
                                 if (sheetNamesElem != null && !string.IsNullOrWhiteSpace(newFileName))
                                 {
-                                    var actualSheets = GetExternalWorkbookSheetNames(newFileName, exportDir, matchedPairs);
+                                    var actualSheets = GetExternalWorkbookSheetNames(newFileName, exportDir, matchedPairs, knownContractorFilePaths, knownTargetFilePaths);
                                     var existingSheets = sheetNamesElem.Elements().Select(e => e.Attribute("val")?.Value ?? "").ToList();
 
-                                    bool needsUpdate = false;
-                                    if (actualSheets.Count > existingSheets.Count)
+                                    // Only update if actualSheets were positively verified from a real file and differ from existing
+                                    if (actualSheets.Count > 0)
                                     {
-                                        needsUpdate = true;
-                                    }
-                                    else
-                                    {
-                                        for (int i = 0; i < Math.Min(actualSheets.Count, existingSheets.Count); i++)
+                                        bool isDefaultSingleSheet = existingSheets.Count == 1 && string.Equals(existingSheets[0], "Sheet1", StringComparison.OrdinalIgnoreCase);
+                                        bool sheetsDiffer = false;
+
+                                        if (isDefaultSingleSheet && !actualSheets.Contains("Sheet1", StringComparer.OrdinalIgnoreCase))
                                         {
-                                            if (!string.Equals(actualSheets[i], existingSheets[i], StringComparison.OrdinalIgnoreCase))
+                                            sheetsDiffer = true;
+                                        }
+                                        else if (actualSheets.Count > existingSheets.Count)
+                                        {
+                                            sheetsDiffer = true;
+                                        }
+                                        else
+                                        {
+                                            for (int i = 0; i < Math.Min(actualSheets.Count, existingSheets.Count); i++)
                                             {
-                                                needsUpdate = true;
-                                                break;
+                                                if (!string.Equals(actualSheets[i], existingSheets[i], StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    sheetsDiffer = true;
+                                                    break;
+                                                }
                                             }
                                         }
-                                    }
 
-                                    if (needsUpdate)
-                                    {
-                                        sheetNamesElem.RemoveAll();
-                                        foreach (var s in actualSheets)
+                                        if (sheetsDiffer)
                                         {
-                                            sheetNamesElem.Add(new XElement(mainNs + "sheetName", new XAttribute("val", s)));
-                                        }
+                                            sheetNamesElem.RemoveAll();
+                                            foreach (var s in actualSheets)
+                                            {
+                                                sheetNamesElem.Add(new XElement(mainNs + "sheetName", new XAttribute("val", s)));
+                                            }
 
-                                        extLinkEntry.Delete();
-                                        var newExtLinkEntry = archive.CreateEntry(linkPartPath, CompressionLevel.Fastest);
-                                        using var wsStream = newExtLinkEntry.Open();
-                                        extLinkDoc.Save(wsStream);
+                                            extLinkEntry.Delete();
+                                            var newExtLinkEntry = archive.CreateEntry(linkPartPath, CompressionLevel.Fastest);
+                                            using var wsStream = newExtLinkEntry.Open();
+                                            extLinkDoc.Save(wsStream);
+                                        }
                                     }
                                 }
                             }
@@ -1496,7 +1506,11 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
             string linkRelsZip = $"xl/externalLinks/_rels/externalLink{nextExtNum}.xml.rels";
 
             // Create externalLink XML with accurate dynamic sheet names
-            var sheets = GetExternalWorkbookSheetNames(srcFile, exportDir, matchedPairs);
+            var sheets = GetExternalWorkbookSheetNames(srcFile, exportDir, matchedPairs, knownContractorFilePaths, knownTargetFilePaths);
+            if (sheets.Count == 0)
+            {
+                sheets.Add("Sheet1");
+            }
             var sbSheets = new StringBuilder();
             foreach (var s in sheets)
             {
@@ -1717,7 +1731,9 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
     private static List<string> GetExternalWorkbookSheetNames(
         string contractorFileName,
         string packageDirectory,
-        IReadOnlyList<BoqMatchedPair> matchedPairs)
+        IReadOnlyList<BoqMatchedPair> matchedPairs,
+        IEnumerable<string>? knownContractorFilePaths = null,
+        IEnumerable<string>? knownTargetFilePaths = null)
     {
         var sheetNames = new List<string>();
 
@@ -1741,6 +1757,54 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                 {
                     candidatePath = p2;
                 }
+            }
+        }
+
+        // Check in known contractor file paths
+        if (candidatePath == null && knownContractorFilePaths != null)
+        {
+            string targetName = Path.GetFileName(contractorFileName);
+            foreach (var p in knownContractorFilePaths)
+            {
+                if (File.Exists(p) && string.Equals(Path.GetFileName(p), targetName, StringComparison.OrdinalIgnoreCase))
+                {
+                    candidatePath = p;
+                    break;
+                }
+            }
+        }
+
+        // Check in known target file paths (including un-reconciled counterparts)
+        if (candidatePath == null && knownTargetFilePaths != null)
+        {
+            string targetName = Path.GetFileName(contractorFileName);
+            string baseTargetName = targetName.EndsWith("_Reconciled.xlsx", StringComparison.OrdinalIgnoreCase)
+                ? targetName[..^16] + ".xlsx"
+                : targetName;
+
+            foreach (var p in knownTargetFilePaths)
+            {
+                if (File.Exists(p))
+                {
+                    string pName = Path.GetFileName(p);
+                    if (string.Equals(pName, targetName, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(pName, baseTargetName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        candidatePath = p;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Also check un-reconciled counterpart in packageDirectory
+        if (candidatePath == null && contractorFileName.EndsWith("_Reconciled.xlsx", StringComparison.OrdinalIgnoreCase))
+        {
+            string unrecName = Path.GetFileName(contractorFileName)[..^16] + ".xlsx";
+            string pUnrec = Path.Combine(packageDirectory, unrecName);
+            if (File.Exists(pUnrec))
+            {
+                candidatePath = pUnrec;
             }
         }
 
@@ -1787,11 +1851,6 @@ public sealed class ClosedXmlExporter : BaseBoqExporter
                     sheetNames.Add(src.SheetName);
                 }
             }
-        }
-
-        if (sheetNames.Count == 0)
-        {
-            sheetNames.Add("Sheet1");
         }
 
         return sheetNames;

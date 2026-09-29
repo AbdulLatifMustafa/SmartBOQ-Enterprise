@@ -355,4 +355,63 @@ public class InfrastructureUnitTests
             if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
         }
     }
+
+    [Fact]
+    public void InjectRelativeDynamicLinks_PreservesExistingSheetNames_WhenExternalFileNotYetCreated()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), $"TestPreserve_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            // 1. Create a dummy package that already has an externalLink referencing "Summary" sheet
+            string targetPackage = Path.Combine(tempDir, "Grand_Summary_Reconciled.xlsx");
+            using (var wbTarget = new XLWorkbook())
+            {
+                var ws = wbTarget.Worksheets.Add("Grand Main");
+                ws.Cell("F14").Value = 100;
+                wbTarget.SaveAs(targetPackage);
+            }
+
+            // Manually inject an external link with "PRELIMINARIES-BOQ" and "Summary"
+            using (var zip = System.IO.Compression.ZipFile.Open(targetPackage, System.IO.Compression.ZipArchiveMode.Update))
+            {
+                var extEntry = zip.CreateEntry("xl/externalLinks/externalLink1.xml");
+                using var sw = new StreamWriter(extEntry.Open());
+                sw.Write("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                         "<externalLink xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">\r\n" +
+                         "  <externalBook xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" r:id=\"rId1\">\r\n" +
+                         "    <sheetNames><sheetName val=\"PRELIMINARIES-BOQ\"/><sheetName val=\"Summary\"/></sheetNames>\r\n" +
+                         "  </externalBook>\r\n" +
+                         "</externalLink>");
+
+                var relsEntry = zip.CreateEntry("xl/externalLinks/_rels/externalLink1.xml.rels");
+                using var swRels = new StreamWriter(relsEntry.Open());
+                swRels.Write("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n" +
+                             "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">\r\n" +
+                             "  <Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath\" Target=\"01_Preliminaries.xlsx\" TargetMode=\"External\"/>\r\n" +
+                             "</Relationships>");
+            }
+
+            var pairs = new List<BoqMatchedPair>();
+
+            // Run injection without the physical "01_Preliminaries.xlsx" being present on disk
+            ClosedXmlExporter.InjectRelativeDynamicLinks(targetPackage, "Contractor.xlsx", pairs);
+
+            // Verify that the existing sheet names PRELIMINARIES-BOQ and Summary were NOT wiped out or replaced by Sheet1
+            using (var zip = System.IO.Compression.ZipFile.OpenRead(targetPackage))
+            {
+                var extEntry = zip.GetEntry("xl/externalLinks/externalLink1.xml");
+                Assert.NotNull(extEntry);
+                using var sr = new StreamReader(extEntry.Open());
+                string extXml = sr.ReadToEnd();
+                Assert.Contains("PRELIMINARIES-BOQ", extXml);
+                Assert.Contains("Summary", extXml);
+                Assert.DoesNotContain("<sheetName val=\"Sheet1\"/>", extXml);
+            }
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true);
+        }
+    }
 }

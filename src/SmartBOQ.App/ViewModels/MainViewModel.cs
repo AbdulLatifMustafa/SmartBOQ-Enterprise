@@ -923,18 +923,33 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
 
         string sourceDir = Path.GetDirectoryName(_fileBPath) ?? string.Empty;
 
-        // Default to the fixed export directory beside the executable
-        if (string.IsNullOrWhiteSpace(OutputFilePath) || OutputFilePath.StartsWith(sourceDir, StringComparison.OrdinalIgnoreCase))
+        // Preserve chosen export directory if valid, otherwise fallback to fixedDir
+        string targetDir = !string.IsNullOrWhiteSpace(OutputFilePath)
+            ? (Path.GetDirectoryName(OutputFilePath) ?? fixedDir)
+            : fixedDir;
+
+        // Always guarantee that OutputFilePath matches the current File B name
+        string currentOutBase = !string.IsNullOrWhiteSpace(OutputFilePath)
+            ? Path.GetFileNameWithoutExtension(OutputFilePath)
+            : string.Empty;
+        if (currentOutBase.EndsWith("_Reconciled", StringComparison.OrdinalIgnoreCase))
         {
-            OutputFilePath = Path.Combine(fixedDir, $"{nameWithoutExt}_Reconciled.xlsx");
+            currentOutBase = currentOutBase[..^11];
         }
 
-        string targetDir = !string.IsNullOrWhiteSpace(OutputFilePath) 
-            ? (Path.GetDirectoryName(OutputFilePath) ?? fixedDir) 
-            : fixedDir;
+        if (string.IsNullOrWhiteSpace(OutputFilePath) ||
+            !string.Equals(currentOutBase, nameWithoutExt, StringComparison.OrdinalIgnoreCase))
+        {
+            OutputFilePath = Path.Combine(targetDir, $"{nameWithoutExt}_Reconciled.xlsx");
+        }
+
         DashboardFilePath = Path.Combine(targetDir, $"{nameWithoutExt}_Executive_Dashboard.xlsx");
 
-        if (string.IsNullOrWhiteSpace(ZipOutputFilePath) || ZipOutputFilePath.StartsWith(sourceDir, StringComparison.OrdinalIgnoreCase))
+        string currentZipBase = !string.IsNullOrWhiteSpace(ZipOutputFilePath)
+            ? Path.GetFileNameWithoutExtension(ZipOutputFilePath)
+            : string.Empty;
+        if (string.IsNullOrWhiteSpace(ZipOutputFilePath) ||
+            !currentZipBase.StartsWith(nameWithoutExt, StringComparison.OrdinalIgnoreCase))
         {
             ZipOutputFilePath = Path.Combine(fixedDir, $"{nameWithoutExt}_All_Reconciled_Packages_{DateTime.Now:yyyyMMdd_HHmm}.zip");
         }
@@ -1603,6 +1618,27 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
                 ? $"جارٍ بدء دمج وتصدير ({targetFiles.Count}) مقايسات استشارية في حزمة ZIP واحدة..." 
                 : $"Starting multi-target ZIP package export for ({targetFiles.Count}) BOQs...";
 
+            // Copy all contractor priced source files directly into targetExportFolder before processing packages
+            // so relative dynamic links can immediately inspect sheets and link directly
+            var copiedSourcesList = new List<string>();
+            foreach (var sPath in sourceFiles)
+            {
+                if (File.Exists(sPath))
+                {
+                    string srcCopyName = Path.GetFileName(sPath);
+                    string srcCopyDest = Path.Combine(targetExportFolder, srcCopyName);
+                    try
+                    {
+                        if (!string.Equals(Path.GetFullPath(sPath), Path.GetFullPath(srcCopyDest), StringComparison.OrdinalIgnoreCase))
+                        {
+                            File.Copy(sPath, srcCopyDest, overwrite: true);
+                            copiedSourcesList.Add(srcCopyName);
+                        }
+                    }
+                    catch { /* non-fatal */ }
+                }
+            }
+
             // Reconcile and export each target workbook directly into targetExportFolder
             var allCombinedPairs = new List<BoqMatchedPair>();
             var exportedWorkbooks = new List<(string TargetName, string OutPath, int Matched, int Total, decimal MatchPct)>();
@@ -1673,26 +1709,6 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
             {
                 ClosedXmlExporter.ExportStandaloneDashboard(dashboardPath, allCombinedPairs, sourceFiles[0]);
             }, ct);
-
-            // Copy all contractor priced source files directly into targetExportFolder alongside the reconciled files
-            var copiedSourcesList = new List<string>();
-            foreach (var sPath in sourceFiles)
-            {
-                if (File.Exists(sPath))
-                {
-                    string srcCopyName = Path.GetFileName(sPath);
-                    string srcCopyDest = Path.Combine(targetExportFolder, srcCopyName);
-                    try
-                    {
-                        if (!string.Equals(Path.GetFullPath(sPath), Path.GetFullPath(srcCopyDest), StringComparison.OrdinalIgnoreCase))
-                        {
-                            File.Copy(sPath, srcCopyDest, overwrite: true);
-                            copiedSourcesList.Add(srcCopyName);
-                        }
-                    }
-                    catch { /* non-fatal */ }
-                }
-            }
 
             // Create Technical Audit & Summary Report file inside the export folder
             string reportPath = Path.Combine(targetExportFolder, "Reconciliation_Audit_Summary.txt");
