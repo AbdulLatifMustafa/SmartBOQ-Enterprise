@@ -82,7 +82,7 @@ public partial class App : System.Windows.Application
 
         // Domain & Infrastructure Service Registrations
         services.AddSingleton<IVerificationGate, PreFlightVerificationGate>();
-        services.AddSingleton<IItemMatcher, HybridWeightedMatcher>();
+        services.AddSingleton<IItemMatcher, SmartBOQ.Infrastructure.CognitiveBrain.Engine.CognitiveAdaptiveBrain>();
         services.AddSingleton<IBoqExporter, ClosedXmlExporter>();
         services.AddSingleton<ISqliteRepository>(sp => new SqliteBoqRepository(dbPath));
         services.AddSingleton<IBoqInspector, BoqInspectorService>();

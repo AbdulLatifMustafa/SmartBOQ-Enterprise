@@ -901,9 +901,9 @@ public sealed partial class MainViewModel : ViewModelBase, IMainViewModelCoordin
 
         return new BoqReconciliationService(
             new PreFlightVerificationGate(),
-            new HatchwayFlatReader(),
+            new UniversalAdaptiveBoqReader(),
             new HierarchicalBoqReader(),
-            new HybridWeightedMatcher(),
+            new SmartBOQ.Infrastructure.CognitiveBrain.Engine.CognitiveAdaptiveBrain(),
             new ClosedXmlExporter(),
             new SqliteBoqRepository(dbPath),
             new BoqInspectorService()

@@ -9,6 +9,7 @@ using SmartBOQ.Infrastructure.Logging;
 using SmartBOQ.Infrastructure.Matching;
 using SmartBOQ.Infrastructure.Parsers;
 using SmartBOQ.Infrastructure.Storage;
+using SmartBOQ.Infrastructure.CognitiveBrain.Engine;
 using SmartBOQ.Infrastructure.Verification;
 
 // 1. Register global crash handler
@@ -122,9 +123,9 @@ if (!File.Exists(fileA) || !File.Exists(fileB))
 // Instantiate Infrastructure & Application Services
 var locService = new LocalizationService();
 var verificationGate = new PreFlightVerificationGate();
-var flatReader = new HatchwayFlatReader();
+var flatReader = new UniversalAdaptiveBoqReader();
 var hierarchicalReader = new HierarchicalBoqReader();
-var matcher = new HybridWeightedMatcher();
+var matcher = new CognitiveAdaptiveBrain();
 var exporter = new ClosedXmlExporter();
 var repository = new SqliteBoqRepository(dbPath);
 var inspector = new BoqInspectorService();
@@ -410,7 +411,7 @@ static async Task InspectBothFilesAsync(string fA, string fB)
     Console.WriteLine($"  File B: {fB}");
     Console.WriteLine($"==================================================================");
 
-    var flatReader = new HatchwayFlatReader();
+    var flatReader = new UniversalAdaptiveBoqReader();
     var hierReader = new HierarchicalBoqReader();
 
     Console.WriteLine("\n>>> Reading File A (Contractor Master)...");
@@ -449,7 +450,7 @@ static async Task InspectBothFilesAsync(string fA, string fB)
         Console.WriteLine($"  B: '{b}' -> Match in A: '{(matchingA ?? "NONE")}'");
     }
 
-    var matcher = new HybridWeightedMatcher();
+    var matcher = new CognitiveAdaptiveBrain();
     var allItemsB = sheetsB.SelectMany(s => s.Items).ToList();
     var matchedPairs = await matcher.MatchItemsAsync(allItemsB, itemsA);
 
@@ -572,9 +573,9 @@ static async Task RunDeepIntelligentMergeTestAsync(string fileA, string fileB, s
     // [TEST 1/6]: Pre-Flight Gate & File Schema Verification
     Console.WriteLine("\n>>> [TEST 1/6] Running Pre-Flight Gate & Schema Verification...");
     var gate = new PreFlightVerificationGate();
-    var flatReader = new HatchwayFlatReader();
+    var flatReader = new UniversalAdaptiveBoqReader();
     var hierReader = new HierarchicalBoqReader();
-    var matcher = new HybridWeightedMatcher();
+    var matcher = new CognitiveAdaptiveBrain();
     var exporter = new ClosedXmlExporter();
     Directory.CreateDirectory(outputDir);
     string dbPath = Path.Combine(outputDir, "smartboq_test.db");
@@ -796,9 +797,9 @@ static async Task RunSmartDiscoveryTestAsync(string fileA, string fileB)
 
     var inspector = new BoqInspectorService();
     var gate = new PreFlightVerificationGate();
-    var flatReader = new HatchwayFlatReader();
+    var flatReader = new UniversalAdaptiveBoqReader();
     var hierarchicalReader = new HierarchicalBoqReader();
-    var matcher = new HybridWeightedMatcher();
+    var matcher = new CognitiveAdaptiveBrain();
     var exporter = new ClosedXmlExporter();
     var repo = new SqliteBoqRepository("smartboq_test.db");
 
@@ -1174,9 +1175,9 @@ static async Task RunMultiFileAccuracyBenchmarkAsync()
         // Run Reconciliation
         var inspector = new BoqInspectorService();
         var gate = new PreFlightVerificationGate();
-        var flatR = new HatchwayFlatReader();
+        var flatR = new UniversalAdaptiveBoqReader();
         var hierR = new HierarchicalBoqReader();
-        var matcher = new HybridWeightedMatcher();
+        var matcher = new CognitiveAdaptiveBrain();
         var exporter = new ClosedXmlExporter();
         var repo = new SqliteBoqRepository(Path.Combine(suiteDir, "bench1.db"));
         var service = new BoqReconciliationService(gate, flatR, hierR, matcher, exporter, repo, inspector);
@@ -1270,9 +1271,9 @@ static async Task RunMultiFileAccuracyBenchmarkAsync()
 
         var inspector = new BoqInspectorService();
         var gate = new PreFlightVerificationGate();
-        var flatR = new HatchwayFlatReader();
+        var flatR = new UniversalAdaptiveBoqReader();
         var hierR = new HierarchicalBoqReader();
-        var matcher = new HybridWeightedMatcher();
+        var matcher = new CognitiveAdaptiveBrain();
         var exporter = new ClosedXmlExporter();
         var repo = new SqliteBoqRepository(Path.Combine(suiteDir, "bench2.db"));
         var service = new BoqReconciliationService(gate, flatR, hierR, matcher, exporter, repo, inspector);
@@ -1351,9 +1352,9 @@ static async Task RunMultiFileAccuracyBenchmarkAsync()
 
         var inspector = new BoqInspectorService();
         var gate = new PreFlightVerificationGate();
-        var flatR = new HatchwayFlatReader();
+        var flatR = new UniversalAdaptiveBoqReader();
         var hierR = new HierarchicalBoqReader();
-        var matcher = new HybridWeightedMatcher();
+        var matcher = new CognitiveAdaptiveBrain();
         var exporter = new ClosedXmlExporter();
         var repo = new SqliteBoqRepository(Path.Combine(suiteDir, "bench3.db"));
         var service = new BoqReconciliationService(gate, flatR, hierR, matcher, exporter, repo, inspector);
